@@ -1,0 +1,65 @@
+# Netlify configuration file
+[build]
+  # Directory to publish (relative to root)
+  publish = "build"
+  # Build command
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirects for SPA routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false
+
+# Specific redirects for main routes
+[[redirects]]
+  from = "/"
+  to = "/executive-dashboard"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/production"
+  to = "/production-management"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/equipment"
+  to = "/equipment-management"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/fuel"
+  to = "/fuel-management"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/stock"
+  to = "/stock-management"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/accounting"
+  to = "/accounting"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/reports"
+  to = "/reports"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/admin"
+  to = "/administration"
+  status = 301
+  force = true
