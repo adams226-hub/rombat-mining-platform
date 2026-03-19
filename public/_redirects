@@ -1,0 +1,17 @@
+# Netlify redirects configuration
+# Format: FROM   TO   STATUS_CODE
+
+# Redirect root to executive dashboard
+/                 /executive-dashboard     301
+
+# Redirect old routes to new ones (if needed)
+/production        /production-management    301
+/equipment         /equipment-management     301
+/fuel              /fuel-management          301
+/stock             /stock-management         301
+/accounting        /accounting               301
+/reports           /reports                  301
+/admin             /administration            301
+
+# Handle SPA routing - redirect all non-file requests to index.html
+/*                /index.html              200
