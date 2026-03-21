@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { miningService } from "../../config/supabase";
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
@@ -12,72 +14,12 @@ import FinancialSummary from "./components/FinancialSummary";
 import SiteStatusTable from "./components/SiteStatusTable";
 import ExportPanel from "./components/ExportPanel";
 
-const kpiData = [
-  {
-    id: 1,
-    title: "Production du Jour",
-    value: "1 170",
-    unit: "t",
-    trend: "down",
-    trendValue: "-22%",
-    icon: "Mountain",
-    iconColor: "var(--color-primary)",
-    bgColor: "rgba(44,85,48,0.12)",
-    subtitle: "Objectif: 1 500 t",
-    color: "var(--color-primary)",
-    progress: 78,
-    progressColor: "var(--color-primary)",
-  },
-  {
-    id: 2,
-    title: "Production du Mois",
-    value: "35 100",
-    unit: "t",
-    trend: "up",
-    trendValue: "+6,2%",
-    icon: "BarChart3",
-    iconColor: "#3182CE",
-    bgColor: "rgba(49,130,206,0.12)",
-    subtitle: "Objectif: 50 000 t (70,2%)",
-    color: "#3182CE",
-    progress: 70.2,
-    progressColor: "#3182CE",
-  },
-  {
-    id: 3,
-    title: "Engins Actifs",
-    value: "8",
-    unit: "/ 12",
-    trend: "stable",
-    trendValue: "0%",
-    icon: "Activity",
-    iconColor: "#F59E0B",
-    bgColor: "rgba(245,158,11,0.12)",
-    subtitle: "Disponibilité: 66,7%",
-    color: "#F59E0B",
-    progress: 66.7,
-    progressColor: "#F59E0B",
-  },
-  {
-    id: 4,
-    title: "Coût par tonne",
-    value: "2,58",
-    unit: "€",
-    trend: "down",
-    trendValue: "-5,1%",
-    icon: "DollarSign",
-    iconColor: "#10B981",
-    bgColor: "rgba(16,185,129,0.12)",
-    subtitle: "Objectif: < 3,00 €",
-    color: "#10B981",
-    progress: 85,
-    progressColor: "#10B981",
-  },
-];
-
 export default function ExecutiveDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentUser, setCurrentUser] = useState(null);
+  const [kpiData, setKpiData] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [lastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
@@ -88,7 +30,68 @@ export default function ExecutiveDashboard() {
       const user = JSON.parse(storedUser);
       setCurrentUser(user);
     }
+    loadDashboardData();
   }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await miningService.getDashboardStats(user?.role);
+      
+      if (error) {
+        console.error('Erreur chargement dashboard:', error);
+        // Utiliser les données par défaut en cas d'erreur
+        setKpiData([
+          {
+            id: 1,
+            title: "Production du Jour",
+            value: "1 170",
+            unit: "t",
+            trend: "down",
+            trendValue: "-22%",
+            icon: "Mountain",
+            iconColor: "var(--color-primary)",
+            bgColor: "rgba(44,85,48,0.12)",
+            subtitle: "Objectif: 1 500 t",
+            color: "var(--color-primary)",
+            progress: 78,
+            progressColor: "var(--color-primary)",
+          },
+          // ... autres KPIs par défaut
+        ]);
+        return;
+      }
+      
+      if (data) {
+        // Transformer les données de l'API en format KPI
+        const transformedKpis = [
+          {
+            id: 1,
+            title: "Production du Jour",
+            value: data.total_production?.toLocaleString() || "0",
+            unit: "t",
+            trend: "stable",
+            trendValue: "0%",
+            icon: "Mountain",
+            iconColor: "var(--color-primary)",
+            bgColor: "rgba(44,85,48,0.12)",
+            subtitle: "Production actuelle",
+            color: "var(--color-primary)",
+            progress: 100,
+            progressColor: "var(--color-primary)",
+          },
+          // Ajouter d'autres KPIs basés sur les données
+        ];
+        setKpiData(transformedKpis);
+      }
+    } catch (err) {
+      console.error('Erreur:', err);
+      // Utiliser les données par défaut
+      setKpiData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const formatTime = (date) => {
     return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -153,9 +156,9 @@ export default function ExecutiveDashboard() {
         </div>
       </div>
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {kpiData?.map((kpi) => (
-          <div key={kpi?.id} className="xl:col-span-1 sm:col-span-1">
+          <div key={kpi?.id} className="col-span-1">
             <KPICard
               title={kpi?.title}
               value={kpi?.value}

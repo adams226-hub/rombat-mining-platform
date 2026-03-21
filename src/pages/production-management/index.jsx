@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { parseObjective, formatObjective, calculateProgress, calculateStock } from "../../utils/objectiveParser";
 import { toastError, toastSuccess } from "../../utils/toast";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { miningService } from "../../config/supabase";
 import AppLayout from "../../components/navigation/AppLayout";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
@@ -68,56 +70,26 @@ export default function ProductionManagement() {
   }, [productionData, exitData]);
 
   const loadProductionData = async () => {
-    const mockData = [
-      {
-        id: 1,
-        date: '2026-03-05',
-        site: 'Carrière Nord',
-        shift: 'jour',
-        operator: 'Jean Dupont',
-        dimensions: [
-          { dimension: 'Minerai', quantity: 300 },
-          { dimension: 'Forage', quantity: 150 },
-          { dimension: '0/4', quantity: 200 },
-          { dimension: '0/5', quantity: 180 },
-          { dimension: '0/6', quantity: 160 },
-          { dimension: '5/15', quantity: 140 },
-          { dimension: '8/15', quantity: 120 },
-          { dimension: '15/25', quantity: 100 },
-          { dimension: '4/6', quantity: 90 },
-          { dimension: '10/14', quantity: 80 },
-          { dimension: '6/10', quantity: 70 },
-          { dimension: '0/31,5', quantity: 60 }
-        ],
-        total: 1650,
-        notes: 'Production normale'
-      },
-      {
-        id: 2,
-        date: '2026-03-04',
-        site: 'Carrière Sud',
-        shift: 'nuit',
-        operator: 'Marie Martin',
-        dimensions: [
-          { dimension: 'Minerai', quantity: 280 },
-          { dimension: 'Forage', quantity: 120 },
-          { dimension: '0/4', quantity: 180 },
-          { dimension: '0/5', quantity: 160 },
-          { dimension: '0/6', quantity: 140 },
-          { dimension: '5/15', quantity: 130 },
-          { dimension: '8/15', quantity: 110 },
-          { dimension: '15/25', quantity: 90 },
-          { dimension: '4/6', quantity: 85 },
-          { dimension: '10/14', quantity: 75 },
-          { dimension: '6/10', quantity: 65 },
-          { dimension: '0/31,5', quantity: 55 }
-        ],
-        total: 1490,
-        notes: 'Production nocturne'
+    try {
+      setLoading(true);
+      const { user } = useAuth();
+      const { data, error } = await miningService.getProductionData(user?.role);
+      
+      if (error) {
+        console.error('Erreur chargement production:', error);
+        toastError('Erreur lors du chargement des données de production');
+        return;
       }
-    ];
-    setProductionData(mockData);
-    setLoading(false);
+      
+      if (data) {
+        setProductionData(data);
+      }
+    } catch (err) {
+      console.error('Erreur:', err);
+      toastError('Erreur de connexion');
+    } finally {
+      setLoading(false);
+    }
   };
 
 
