@@ -140,6 +140,169 @@ export const miningService = {
       .order('total_fuel_consumed', { ascending: false })
       .limit(20);
     return { data, error };
+  },
+
+  // Stock Management
+  async getStockEntries(userRole) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
+    if (denied) return denied;
+    const { data, error } = await supabase
+      .from('stock_entries')
+      .select(`
+        *,
+        stock_entry_details (*),
+        users:created_by (full_name)
+      `)
+      .order('date', { ascending: false });
+    return { data, error };
+  },
+
+  async getStockExits(userRole) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
+    if (denied) return denied;
+    const { data, error } = await supabase
+      .from('stock_exits')
+      .select(`
+        *,
+        stock_exit_details (*),
+        users:created_by (full_name)
+      `)
+      .order('date', { ascending: false });
+    return { data, error };
+  },
+
+  async addStockEntry(userRole, entry) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
+    if (denied) return denied;
+
+    const { dimensions, ...entryData } = entry;
+    const user = await supabase.auth.getUser();
+
+    // Créer l'entrée principale
+    const { data: entryResult, error: entryError } = await supabase
+      .from('stock_entries')
+      .insert([{
+        ...entryData,
+        created_by: user.data.user?.id || null
+      }])
+      .select()
+      .single();
+
+    if (entryError) return { data: null, error: entryError };
+
+    // Ajouter les détails des dimensions
+    const detailsData = dimensions
+      .filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
+      .map(dim => ({
+        entry_id: entryResult.id,
+        dimension: dim.size,
+        quantity: parseFloat(dim.quantity)
+      }));
+
+    if (detailsData.length > 0) {
+      const { error: detailsError } = await supabase
+        .from('stock_entry_details')
+        .insert(detailsData);
+
+      if (detailsError) return { data: null, error: detailsError };
+    }
+
+    return { data: entryResult, error: null };
+  },
+
+  async addStockExit(userRole, exit) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
+    if (denied) return denied;
+
+    const { dimensions, ...exitData } = exit;
+    const user = await supabase.auth.getUser();
+
+    // Créer la sortie principale
+    const { data: exitResult, error: exitError } = await supabase
+      .from('stock_exits')
+      .insert([{
+        ...exitData,
+        created_by: user.data.user?.id || null
+      }])
+      .select()
+      .single();
+
+    if (exitError) return { data: null, error: exitError };
+
+    // Ajouter les détails des dimensions
+    const detailsData = dimensions
+      .filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
+      .map(dim => ({
+        exit_id: exitResult.id,
+        dimension: dim.size,
+        quantity: parseFloat(dim.quantity)
+      }));
+
+    if (detailsData.length > 0) {
+      const { error: detailsError } = await supabase
+        .from('stock_exit_details')
+        .insert(detailsData);
+
+      if (detailsError) return { data: null, error: detailsError };
+    }
+
+    return { data: exitResult, error: null };
+  },
+
+  async getStockSummary(userRole) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
+    if (denied) return denied;
+
+    // Récupérer toutes les entrées et sorties
+    const [entriesResult, exitsResult] = await Promise.all([
+      supabase.from('stock_entry_details').select('dimension, quantity'),
+      supabase.from('stock_exit_details').select('dimension, quantity')
+    ]);
+
+    if (entriesResult.error || exitsResult.error) {
+      return { data: null, error: entriesResult.error || exitsResult.error };
+    }
+
+    // Calculer le stock par dimension
+    const dimensions = ['Minerai', 'Forage', '0/4', '0/5', '0/6', '5/15', '8/15', '15/25', '4/6', '10/14', '6/10', '0/31,5'];
+    const stockSummary = dimensions.map(dim => {
+      const totalEntries = entriesResult.data
+        .filter(entry => entry.dimension === dim)
+        .reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+
+      const totalExits = exitsResult.data
+        .filter(exit => exit.dimension === dim)
+        .reduce((sum, exit) => sum + parseFloat(exit.quantity), 0);
+
+      return {
+        dimension: dim,
+        entries: totalEntries,
+        exits: totalExits,
+        available: totalEntries - totalExits
+      };
+    });
+
+    return { data: stockSummary, error: null };
+  },
+
+  // Reports
+  async getReports(userRole) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'directeur']);
+    if (denied) return denied;
+    const { data, error } = await supabase
+      .from('reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return { data, error };
+  },
+
+  async createReport(userRole, report) {
+    const denied = ensureRoleAccess(userRole, ['admin', 'directeur']);
+    if (denied) return denied;
+    const { data, error } = await supabase
+      .from('reports')
+      .insert([report]);
+    return { data, error };
   }
 };
 

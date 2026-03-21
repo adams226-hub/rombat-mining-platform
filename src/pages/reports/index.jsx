@@ -5,6 +5,7 @@ import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { toastError, toastSuccess } from "../../utils/toast.jsx";
+import { miningService } from "../../config/supabase.js";
 
 export default function Reports() {
   const navigate = useNavigate();
@@ -33,14 +34,19 @@ export default function Reports() {
   }, []);
 
   const loadReports = async () => {
-    const mockReports = [
-      { id: 1, name: "Rapport de Production Mensuel", type: "production", date: "2026-03-01", period: "Février 2026", status: "completed", size: "2.4 MB", format: "PDF" },
-      { id: 2, name: "Analyse des Coûts Opérationnels", type: "financial", date: "2026-02-28", period: "Février 2026", status: "completed", size: "1.8 MB", format: "PDF" },
-      { id: 3, name: "Rapport de Maintenance Équipements", type: "maintenance", date: "2026-02-25", period: "Février 2026", status: "completed", size: "3.1 MB", format: "Excel" },
-      { id: 4, name: "Bilan Trimestriel", type: "summary", date: "2026-03-05", period: "Q1 2026", status: "completed", size: "2.8 MB", format: "PDF" }
-    ];
-    setReports(mockReports);
-    setLoading(false);
+    try {
+      const result = await miningService.getReports('admin');
+      if (result.error) throw result.error;
+      
+      setReports(result.data || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement des rapports:', error);
+      toastError("Erreur lors du chargement des rapports");
+      // Fallback vers des données vides en cas d'erreur
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Dimensions correctes selon la production

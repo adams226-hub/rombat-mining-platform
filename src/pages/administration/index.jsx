@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
+import { miningService } from "../../config/supabase.js";
 
 export default function Administration() {
   const navigate = useNavigate();
@@ -51,80 +52,18 @@ export default function Administration() {
   }, []);
 
   const loadUsers = async () => {
-    const mockUsers = [
-      {
-        id: 1,
-        username: "admin",
-        email: "admin@rombat.com",
-        full_name: "Administrateur ROMBAT",
-        role: "admin",
-        department: "IT",
-        is_active: true,
-        last_login: "2026-03-10 14:30"
-      },
-      {
-        id: 2,
-        username: "supervisor",
-        email: "supervisor@rombat.com",
-        full_name: "Chef de Production",
-        role: "supervisor",
-        department: "Production",
-        is_active: true,
-        last_login: "2026-03-10 16:45"
-      },
-      {
-        id: 3,
-        username: "operator1",
-        email: "operator1@rombat.com",
-        full_name: "Opérateur 1",
-        role: "operator",
-        department: "Mining",
-        is_active: true,
-        last_login: "2026-03-10 08:15"
-      },
-      {
-        id: 4,
-        username: "operator2",
-        email: "operator2@rombat.com",
-        full_name: "Opérateur 2",
-        role: "operator",
-        department: "Mining",
-        is_active: false,
-        last_login: "2026-03-08 17:20"
-      },
-      {
-        id: 5,
-        username: "directeur",
-        email: "directeur@rombat.com",
-        full_name: "Directeur Général",
-        role: "directeur",
-        department: "Direction",
-        is_active: true,
-        last_login: "2026-03-10 09:30"
-      },
-      {
-        id: 6,
-        username: "chefsite",
-        email: "chefsite@rombat.com",
-        full_name: "Chef de Site Principal",
-        role: "chef_de_site",
-        department: "Exploitation",
-        is_active: true,
-        last_login: "2026-03-10 07:45"
-      },
-      {
-        id: 7,
-        username: "comptable",
-        email: "comptable@rombat.com",
-        full_name: "Comptable Principal",
-        role: "comptable",
-        department: "Finance",
-        is_active: true,
-        last_login: "2026-03-10 10:15"
-      }
-    ];
-    setUsers(mockUsers);
-    setLoading(false);
+    try {
+      const result = await miningService.getUsers('admin');
+      if (result.error) throw result.error;
+      
+      setUsers(result.data || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement des utilisateurs:', error);
+      // Fallback vers des données vides en cas d'erreur
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Ajouter un utilisateur
@@ -135,14 +74,19 @@ export default function Administration() {
         return;
       }
 
-      const userToAdd = {
-        ...newUser,
-        id: Date.now(),
-        is_active: true,
-        last_login: null
-      };
-      
-      setUsers([...users, userToAdd]);
+      const result = await miningService.createUser('admin', {
+        username: newUser.username,
+        email: newUser.email,
+        password_hash: 'default_password', // À remplacer par un vrai hash
+        full_name: newUser.full_name,
+        role: newUser.role,
+        department: newUser.department,
+        is_active: true
+      });
+
+      if (result.error) throw result.error;
+
+      await loadUsers(); // Recharger la liste
       setShowAddModal(false);
       setNewUser({
         username: '',
@@ -153,7 +97,8 @@ export default function Administration() {
       });
       alert('Utilisateur ajouté avec succès!');
     } catch (error) {
-      console.error("Erreur ajout utilisateur:", error);
+      console.error('Erreur lors de l\'ajout de l\'utilisateur:', error);
+      alert('Erreur lors de l\'ajout de l\'utilisateur');
     }
   };
 

@@ -1,33 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { miningService } from '../../config/supabase';
 import Icon from 'components/AppIcon';
-
-const MOCK_ALERTS = [
-  {
-    id: 1,
-    type: 'critical',
-    title: 'Stock Carburant Critique',
-    message: 'Niveau carburant Site A: 12% restant',
-    path: '/fuel-management',
-    time: '5 min',
-    icon: 'Fuel',
-    read: false,
-  },
-  {
-    id: 2,
-    type: 'warning',
-    title: 'Maintenance Requise',
-    message: 'Excavatrice EX-003 - révision dans 48h',
-    path: '/equipment-management',
-    time: '1h',
-    icon: 'Wrench',
-    read: false,
-  },
-  {
-    id: 3,
-    type: 'warning',
-    title: 'Objectif Production',
-    message: 'Production journalière à 78% de l\'objectif',
     path: '/production-management',
     time: '2h',
     icon: 'BarChart3',
@@ -70,13 +45,79 @@ const TYPE_STYLES = {
 };
 
 export default function AlertNotificationBadge({ className = '' }) {
-  const [alerts, setAlerts] = useState(MOCK_ALERTS);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const panelRef = useRef(null);
-  const navigate = useNavigate();
 
   const unreadCount = alerts?.filter(a => !a?.read)?.length;
   const criticalCount = alerts?.filter(a => a?.type === 'critical' && !a?.read)?.length;
+
+  // Charger les alertes depuis Supabase
+  useEffect(() => {
+    const loadAlerts = async () => {
+      if (!user?.role) return;
+
+      try {
+        setLoading(true);
+        // Pour l'instant, utiliser des données mockées transformées
+        // TODO: Remplacer par appel API réel quand la table alerts sera remplie
+        const mockAlerts = [
+          {
+            id: '1',
+            type: 'critical',
+            title: 'Stock Carburant Critique',
+            message: 'Niveau carburant Site A: 12% restant',
+            path: '/fuel-management',
+            time: '5 min',
+            icon: 'Fuel',
+            read: false,
+          },
+          {
+            id: '2',
+            type: 'warning',
+            title: 'Maintenance Requise',
+            message: 'Excavatrice EX-003 - révision dans 48h',
+            path: '/equipment-management',
+            time: '1h',
+            icon: 'Wrench',
+            read: false,
+          },
+          {
+            id: '3',
+            type: 'warning',
+            title: 'Objectif Production',
+            message: 'Production journalière à 78% de l\'objectif',
+            path: '/production-management',
+            time: '2h',
+            icon: 'BarChart3',
+            read: false,
+          },
+          {
+            id: '4',
+            type: 'info',
+            title: 'Rapport Mensuel',
+            message: 'Rapport de mars disponible pour export',
+            path: '/reports',
+            time: '3h',
+            icon: 'FileText',
+            read: true,
+          },
+        ];
+
+        setAlerts(mockAlerts);
+      } catch (error) {
+        console.error('Erreur chargement alertes:', error);
+        setAlerts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAlerts();
+  }, [user?.role]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {

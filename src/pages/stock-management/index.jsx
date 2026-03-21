@@ -4,6 +4,7 @@ import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import { toastError, toastSuccess } from "../../utils/toast.jsx";
+import { miningService } from "../../config/supabase.js";
 
 export default function StockManagement() {
   const navigate = useNavigate();
@@ -59,101 +60,40 @@ export default function StockManagement() {
 
   const loadStockData = async () => {
     try {
-      // Données de démonstration pour les entrées
-      const mockEntries = [
-        {
-          id: 1,
-          date: '2026-03-01',
-          source: 'Carrière Nord',
-          dimensions: [
-            { size: 'Minerai', quantity: 300 },
-            { size: 'Forage', quantity: 150 },
-            { size: '0/4', quantity: 200 },
-            { size: '0/5', quantity: 180 },
-            { size: '0/6', quantity: 160 },
-            { size: '5/15', quantity: 140 },
-            { size: '8/15', quantity: 120 },
-            { size: '15/25', quantity: 100 },
-            { size: '4/6', quantity: 90 },
-            { size: '10/14', quantity: 80 },
-            { size: '6/10', quantity: 70 },
-            { size: '0/31,5', quantity: 60 }
-          ],
-          total: 1650
-        },
-        {
-          id: 2,
-          date: '2026-03-02',
-          source: 'Carrière Sud',
-          dimensions: [
-            { size: 'Minerai', quantity: 280 },
-            { size: 'Forage', quantity: 120 },
-            { size: '0/4', quantity: 180 },
-            { size: '0/5', quantity: 160 },
-            { size: '0/6', quantity: 140 },
-            { size: '5/15', quantity: 130 },
-            { size: '8/15', quantity: 110 },
-            { size: '15/25', quantity: 90 },
-            { size: '4/6', quantity: 85 },
-            { size: '10/14', quantity: 75 },
-            { size: '6/10', quantity: 65 },
-            { size: '0/31,5', quantity: 55 }
-          ],
-          total: 1490
-        }
-      ];
+      // Récupérer les données depuis l'API
+      const [entriesResult, exitsResult, stockSummaryResult] = await Promise.all([
+        miningService.getStockEntries('admin'),
+        miningService.getStockExits('admin'),
+        miningService.getStockSummary('admin')
+      ]);
 
-      // Données de démonstration pour les sorties
-      const mockExits = [
-        {
-          id: 1,
-          date: '2026-03-01',
-          destination: 'Client A',
-          dimensions: [
-            { size: 'Minerai', quantity: 100 },
-            { size: 'Forage', quantity: 50 },
-            { size: '0/4', quantity: 50 },
-            { size: '0/5', quantity: 45 },
-            { size: '0/6', quantity: 40 },
-            { size: '5/15', quantity: 35 },
-            { size: '8/15', quantity: 30 },
-            { size: '15/25', quantity: 25 },
-            { size: '4/6', quantity: 20 },
-            { size: '10/14', quantity: 18 },
-            { size: '6/10', quantity: 15 },
-            { size: '0/31,5', quantity: 12 }
-          ],
-          total: 440
-        },
-        {
-          id: 2,
-          date: '2026-03-02',
-          destination: 'Client B',
-          dimensions: [
-            { size: 'Minerai', quantity: 120 },
-            { size: 'Forage', quantity: 60 },
-            { size: '0/4', quantity: 80 },
-            { size: '0/5', quantity: 70 },
-            { size: '0/6', quantity: 65 },
-            { size: '5/15', quantity: 55 },
-            { size: '8/15', quantity: 45 },
-            { size: '15/25', quantity: 40 },
-            { size: '4/6', quantity: 35 },
-            { size: '10/14', quantity: 30 },
-            { size: '6/10', quantity: 25 },
-            { size: '0/31,5', quantity: 20 }
-          ],
-          total: 645
-        }
-      ];
+      if (entriesResult.error) throw entriesResult.error;
+      if (exitsResult.error) throw exitsResult.error;
+      if (stockSummaryResult.error) throw stockSummaryResult.error;
 
-      setEntries(mockEntries);
-      setExits(mockExits);
-      
-      // Calcul du stock en temps réel
-      calculateStock(mockEntries, mockExits);
+      // Transformer les données pour correspondre au format attendu
+      const transformedEntries = entriesResult.data.map(entry => ({
+        id: entry.id,
+        date: entry.date,
+        source: entry.source,
+        dimensions: entry.stock_entry_details || [],
+        total: (entry.stock_entry_details || []).reduce((sum, detail) => sum + parseFloat(detail.quantity), 0)
+      }));
+
+      const transformedExits = exitsResult.data.map(exit => ({
+        id: exit.id,
+        date: exit.date,
+        destination: exit.destination,
+        dimensions: exit.stock_exit_details || [],
+        total: (exit.stock_exit_details || []).reduce((sum, detail) => sum + parseFloat(detail.quantity), 0)
+      }));
+
+      setEntries(transformedEntries);
+      setExits(transformedExits);
+      setStockData(stockSummaryResult.data);
       
     } catch (error) {
+      console.error('Erreur lors du chargement des données de stock:', error);
       toastError("Erreur lors du chargement des données de stock");
     } finally {
       setLoading(false);
@@ -200,26 +140,19 @@ export default function StockManagement() {
         return;
       }
 
-      // Calcul du total
-      const total = newEntry.dimensions.reduce((sum, dim) => 
-        sum + (parseFloat(dim.quantity) || 0), 0
-      );
-
-      // Ajout de l'entrée
-      const entryToAdd = {
-        id: Date.now(),
+      // Préparer les données pour l'API
+      const entryData = {
         date: newEntry.date,
         source: newEntry.source,
-        dimensions: newEntry.dimensions.map(dim => ({
-          size: dim.size,
-          quantity: parseFloat(dim.quantity) || 0
-        })),
-        total: total
+        dimensions: newEntry.dimensions.filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
       };
 
-      const updatedEntries = [...entries, entryToAdd];
-      setEntries(updatedEntries);
-      calculateStock(updatedEntries, exits);
+      // Sauvegarder via l'API
+      const result = await miningService.addStockEntry('admin', entryData);
+      if (result.error) throw result.error;
+
+      // Recharger les données
+      await loadStockData();
       
       // Réinitialisation du formulaire
       setNewEntry({
@@ -242,9 +175,10 @@ export default function StockManagement() {
       });
       
       setShowEntryModal(false);
-      toastSuccess(`Entrée de stock enregistrée: +${total} tonnes`);
+      toastSuccess(`Entrée de stock enregistrée avec succès`);
       
     } catch (error) {
+      console.error('Erreur lors de l\'enregistrement de l\'entrée:', error);
       toastError("Erreur lors de l'enregistrement de l'entrée");
     }
   };
@@ -274,26 +208,19 @@ export default function StockManagement() {
         }
       }
 
-      // Calcul du total
-      const total = newExit.dimensions.reduce((sum, dim) => 
-        sum + (parseFloat(dim.quantity) || 0), 0
-      );
-
-      // Ajout de la sortie
-      const exitToAdd = {
-        id: Date.now(),
+      // Préparer les données pour l'API
+      const exitData = {
         date: newExit.date,
         destination: newExit.destination,
-        dimensions: newExit.dimensions.map(dim => ({
-          size: dim.size,
-          quantity: parseFloat(dim.quantity) || 0
-        })),
-        total: total
+        dimensions: newExit.dimensions.filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
       };
 
-      const updatedExits = [...exits, exitToAdd];
-      setExits(updatedExits);
-      calculateStock(entries, updatedExits);
+      // Sauvegarder via l'API
+      const result = await miningService.addStockExit('admin', exitData);
+      if (result.error) throw result.error;
+
+      // Recharger les données
+      await loadStockData();
       
       // Réinitialisation du formulaire
       setNewExit({
@@ -316,9 +243,10 @@ export default function StockManagement() {
       });
       
       setShowExitModal(false);
-      toastSuccess(`Sortie de stock enregistrée: -${total} tonnes`);
+      toastSuccess(`Sortie de stock enregistrée avec succès`);
       
     } catch (error) {
+      console.error('Erreur lors de l\'enregistrement de la sortie:', error);
       toastError("Erreur lors de l'enregistrement de la sortie");
     }
   };
