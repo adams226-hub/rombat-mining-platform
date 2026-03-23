@@ -140,7 +140,7 @@ export const miningService = {
     const entryData = {
       ...rest,
       transaction_date: date,
-      site_id: 1, // Default site ID - should come from context
+      site_id: "550e8400-e29b-41d4-a716-446655440001", // Valid UUID for site
       created_at: new Date().toISOString()
       // total_cost is automatically calculated by the database as quantity * cost_per_liter
     };
