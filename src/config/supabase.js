@@ -140,7 +140,6 @@ export const miningService = {
     const entryData = {
       ...rest,
       transaction_date: date,
-      user_id: (await supabase.auth.getUser()).data.user?.id || null,
       site_id: 1, // Default site ID - should come from context
       created_at: new Date().toISOString()
       // total_cost is automatically calculated by the database as quantity * cost_per_liter
