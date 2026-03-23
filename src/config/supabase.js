@@ -68,9 +68,18 @@ export const miningService = {
     if (denied) return denied;
     
     try {
-      const { data, error } = await supabase
+      // Récupérer les données de production avec les détails
+      const { data: productionData, error } = await supabase
         .from('production')
-        .select('*');
+        .select(`
+          *,
+          production_details (
+            dimension,
+            quantity
+          )
+        `)
+        .order('date', { ascending: false })
+        .limit(50);
       
       if (error) {
         console.warn('Production RLS Error, using fallback:', error.message);
@@ -83,7 +92,8 @@ export const miningService = {
             shift: 'Jour',
             operator: 'JD',
             notes: 'Production normale',
-            dimensions: [
+            total: 795,
+            production_details: [
               { dimension: 'Minerai', quantity: 280 },
               { dimension: 'Forage', quantity: 145 },
               { dimension: '0/4', quantity: 195 },
@@ -97,7 +107,8 @@ export const miningService = {
             shift: 'Jour',
             operator: 'JD',
             notes: 'Production matin',
-            dimensions: [
+            total: 880,
+            production_details: [
               { dimension: 'Minerai', quantity: 320 },
               { dimension: 'Forage', quantity: 160 },
               { dimension: '0/4', quantity: 210 },
@@ -108,7 +119,7 @@ export const miningService = {
         return { data: mockData, error: null };
       }
       
-      return { data, error };
+      return { data: productionData, error };
     } catch (err) {
       console.error('Production service error:', err);
       // Return mock data if everything fails
@@ -120,7 +131,8 @@ export const miningService = {
           shift: 'Jour',
           operator: 'JD',
           notes: 'Production normale',
-          dimensions: [
+          total: 795,
+          production_details: [
             { dimension: 'Minerai', quantity: 280 },
             { dimension: 'Forage', quantity: 145 }
           ]
@@ -134,18 +146,64 @@ export const miningService = {
     const denied = ensureRoleAccess(userRole, ['admin', 'directeur', 'supervisor', 'operator']);
     if (denied) return denied;
     
-    // Always use localStorage fallback for demo purposes
-    console.log('Using localStorage fallback for production data');
-    const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
-    const newProduction = {
-      id: Date.now().toString(),
-      ...production,
-      created_at: new Date().toISOString()
-    };
-    productions.push(newProduction);
-    localStorage.setItem('production_fallback', JSON.stringify(productions));
-    
-    return { data: [newProduction], error: null };
+    try {
+      // Insérer d'abord la production principale
+      const { data: productionResult, error: productionError } = await supabase
+        .from('production')
+        .insert([{
+          date: production.date,
+          site: production.site,
+          shift: production.shift,
+          operator: production.operator,
+          notes: production.notes,
+          total: production.total
+        }])
+        .select()
+        .single();
+      
+      if (productionError) {
+        console.warn('Production insert RLS Error, using fallback:', productionError.message);
+        // Fallback: Store in localStorage for demo
+        const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
+        const newProduction = {
+          id: Date.now().toString(),
+          ...production,
+          created_at: new Date().toISOString()
+        };
+        productions.push(newProduction);
+        localStorage.setItem('production_fallback', JSON.stringify(productions));
+        return { data: [newProduction], error: null };
+      }
+      
+      // Insérer les détails de production
+      const detailsToInsert = production.dimensions.map(dim => ({
+        production_id: productionResult.id,
+        dimension: dim.dimension,
+        quantity: parseFloat(dim.quantity) || 0
+      }));
+      
+      const { data: detailsResult, error: detailsError } = await supabase
+        .from('production_details')
+        .insert(detailsToInsert);
+      
+      if (detailsError) {
+        console.warn('Production details insert Error:', detailsError.message);
+      }
+      
+      return { data: [productionResult], error: null };
+    } catch (err) {
+      console.error('Production insert error:', err);
+      // Fallback: Store in localStorage for demo
+      const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
+      const newProduction = {
+        id: Date.now().toString(),
+        ...production,
+        created_at: new Date().toISOString()
+      };
+      productions.push(newProduction);
+      localStorage.setItem('production_fallback', JSON.stringify(productions));
+      return { data: [newProduction], error: null };
+    }
   },
 
   // Dashboard
