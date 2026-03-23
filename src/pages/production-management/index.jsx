@@ -108,7 +108,12 @@ export default function ProductionManagement() {
       }
       
       if (data) {
-        setProductionData(data);
+        // Mapper les données de Supabase vers le format attendu par le frontend
+        const mappedData = data.map(item => ({
+          ...item,
+          dimensions: item.production_details || [] // Convertir production_details en dimensions
+        }));
+        setProductionData(mappedData);
       }
     } catch (err) {
       console.error('Erreur:', err);
