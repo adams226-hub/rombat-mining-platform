@@ -17,6 +17,7 @@ import Accounting from "./pages/accounting";
 import Reports from "./pages/reports";
 import Administration from "./pages/administration";
 import AdminComplete from "./pages/administration/admin-complete";
+import AdminWorking from "./pages/administration/admin-working";
 import StockManagement from "./pages/stock-management";
 
 // Composant pour la redirection automatique basée sur le rôle
@@ -157,6 +158,13 @@ const AppRoutes = () => {
       <Route path="/admin-complete" element={
         <ProtectedRouteWrapper allowedRoles={['admin']}>
           <AdminComplete />
+        </ProtectedRouteWrapper>
+      } />
+      
+      {/* Route Administration Working - version garantie */}
+      <Route path="/admin-working" element={
+        <ProtectedRouteWrapper allowedRoles={['admin']}>
+          <AdminWorking />
         </ProtectedRouteWrapper>
       } />
       
