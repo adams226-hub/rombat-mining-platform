@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-// Liste des utilisateurs simulée
-const USERS = [
+// Liste des utilisateurs par défaut + utilisateurs dynamiques
+const DEFAULT_USERS = [
   {
     id: 1,
     username: "admin",
@@ -69,6 +69,12 @@ const USERS = [
   }
 ];
 
+// Fonction pour obtenir tous les utilisateurs (par défaut + dynamiques)
+const getAllUsers = () => {
+  const dynamicUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+  return [...DEFAULT_USERS, ...dynamicUsers];
+};
+
 // Configuration des routes accessibles par rôle
 const ROLE_PERMISSIONS = {
   admin: ['/', '/executive-dashboard', '/production-management', '/equipment-management', '/fuel-management', '/accounting', '/reports', '/administration', '/stock-management'],
@@ -98,7 +104,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = (username, password) => {
-    const foundUser = USERS.find(u => u.username === username && u.password === password);
+    const allUsers = getAllUsers(); // Utiliser les utilisateurs par défaut + dynamiques
+    const foundUser = allUsers.find(u => u.username === username && u.password === password);
     if (foundUser) {
       const userData = { ...foundUser };
       delete userData.password; // Ne pas stocker le mot de passe
