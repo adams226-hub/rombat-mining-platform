@@ -63,11 +63,28 @@ export default function ProductionManagement() {
 
   // Recalculer le stock chaque fois que les données de production ou de sortie changent
   useEffect(() => {
-    if (productionData.length > 0 || exitData.length > 0) {
-      const stockCalculations = calculateStock(productionData, exitData);
-      setStockData(stockCalculations);
-    }
+    const stockCalculations = calculateStock(productionData, exitData);
+    setStockData(stockCalculations);
   }, [productionData, exitData]);
+
+  const computeProductionTotal = (entry) => {
+    if (entry?.total && !isNaN(parseFloat(entry.total))) {
+      return parseFloat(entry.total);
+    }
+    if (Array.isArray(entry?.dimensions)) {
+      return entry.dimensions.reduce((sum, dim) => sum + (parseFloat(dim?.quantity) || 0), 0);
+    }
+    return 0;
+  };
+
+  const normalizeProductionData = (data) => {
+    if (!Array.isArray(data)) return [];
+    return data.map(entry => ({
+      ...entry,
+      dimensions: Array.isArray(entry.dimensions) ? entry.dimensions : [],
+      total: computeProductionTotal(entry),
+    }));
+  };
 
   const loadProductionData = async () => {
     try {
@@ -76,9 +93,10 @@ export default function ProductionManagement() {
       // Utiliser uniquement localStorage pour éviter les erreurs de connexion
       console.log('Production: Using localStorage fallback only');
       
-      const storedData = JSON.parse(localStorage.getItem('production_fallback') || '[]');
+      const storedDataRaw = localStorage.getItem('production_fallback') || '[]';
+      const storedData = JSON.parse(storedDataRaw);
       
-      if (storedData.length === 0) {
+      if (!Array.isArray(storedData) || storedData.length === 0) {
         // Données initiales si localStorage vide
         const initialData = [
           {
@@ -111,9 +129,9 @@ export default function ProductionManagement() {
           }
         ];
         localStorage.setItem('production_fallback', JSON.stringify(initialData));
-        setProductionData(initialData);
+        setProductionData(normalizeProductionData(initialData));
       } else {
-        setProductionData(storedData);
+        setProductionData(normalizeProductionData(storedData));
       }
       
     } catch (err) {
@@ -266,8 +284,8 @@ export default function ProductionManagement() {
     }
   };
 
-  const totalProduction = productionData.reduce((sum, item) => sum + item.total, 0);
-  const totalStock = stockData.reduce((sum, item) => sum + item.available, 0);
+  const totalProduction = productionData.reduce((sum, item) => sum + (parseFloat(item?.total) || 0), 0);
+  const totalStock = stockData.reduce((sum, item) => sum + (parseFloat(item?.available) || 0), 0);
 
   if (loading) {
     return (

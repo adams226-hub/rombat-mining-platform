@@ -8,13 +8,14 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { hasError: true, error: error.message, errorInfo };
   }
 
   componentDidCatch(error, errorInfo) {
     error.__ErrorBoundary = true;
     window.__COMPONENT_ERROR__?.(error, errorInfo);
-    // console.log("Error caught by ErrorBoundary:", error, errorInfo);
+    console.error("Error caught by ErrorBoundary:", error, errorInfo);
+    console.error("Stack trace:", error.stack);
   }
 
   render() {
@@ -31,19 +32,34 @@ class ErrorBoundary extends React.Component {
               </svg>
             </div>
             <div className="flex flex-col gap-1 text-center">
-              <h1 className="text-2xl font-medium text-neutral-800">Something went wrong</h1>
-              <p className="text-neutral-600 text-base w w-8/12 mx-auto">We encountered an unexpected error while processing your request.</p>
+              <h1 className="text-2xl font-medium text-neutral-800">Erreur détectée</h1>
+              <p className="text-neutral-600 text-base w-8/12 mx-auto mb-4">
+                {this.state.error || "Erreur inattendue"}
+              </p>
+              <details className="text-left bg-red-50 p-3 rounded text-sm max-w-md mx-auto">
+                <summary className="cursor-pointer font-medium text-red-800 mb-1">Détails techniques (cliquez)</summary>
+                <pre className="text-xs overflow-auto max-h-32 bg-red-100 p-2 rounded mt-1 whitespace-pre-wrap">
+{this.state.errorInfo?.componentStack?.slice(0, 500) || 'Pas de stack trace'}
+                </pre>
+              </details>
             </div>
             <div className="flex justify-center items-center mt-6">
-              <button
-                onClick={() => {
-                  window.location.href = "/";
-                }}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded flex items-center gap-2 transition-colors duration-200 shadow-sm"
-              >
-                <Icon name="ArrowLeft" size={18} color="#fff" />
-                Back
-              </button>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mt-6">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded flex items-center gap-2 transition-colors duration-200 shadow-sm"
+                >
+                  <Icon name="RefreshCw" size={18} color="#fff" />
+                  Recharger
+                </button>
+                <button
+                  onClick={() => window.location.href = "/"}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded flex items-center gap-2 transition-colors duration-200 shadow-sm"
+                >
+                  <Icon name="ArrowLeft" size={18} color="#fff" />
+                  Accueil
+                </button>
+              </div>
             </div>
           </div >
         </div >

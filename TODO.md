@@ -1,20 +1,28 @@
-# Correction Erreur "TypeError: Failed to fetch" - ✅ RÉSOLUE
+# TODO - Fix Production Module
 
-## ✅ Étapes complétées
-- [x] 1. .env.local créé ✅
-- [x] 2. supabase.js mis à jour ✅
-- [x] 3. check-supabase.js : CONNEXION OK, tables présentes ✅
-- [ ] 4. Redémarrer npm run start
-- [ ] 5. Test dashboard/production
-- [ ] 6. disable_rls.sql si accès refusé
-- [ ] 7. Données test optionnelles
+## ✅ Complété
+- [x] Dev server lancé (http://localhost:4028/)
+- [x] ErrorBoundary amélioré (affiche erreur exacte + stack trace)
+- [x] Analysé tous fichiers production (index, simple, final)
+- [x] Port conflict résolu
 
-## 🚀 Test maintenant
-1. Ctrl+C (arrêter serveur)
-2. `npm run start`
-3. Login admin/admin123 → Dashboard → Plus d'erreur fetch !
+## 🔍 Diagnostic
+- Aller sur /production-management
+- Copier erreur UI/console F12
+- Tester /production-simple (devrait marcher)
 
-## Notes
-- ✅ Supabase connecté : https://kuluihwgrppsziezqrws.supabase.co
-- ⚠️ Tables vides (normal nouveau projet)
+## 🛠️ Fixes prioritaires
+- [ ] Clear localStorage 'production_fallback' corrompu
+- [ ] Ajouter try/catch calculateStock dans index.jsx
+- [ ] Route par défaut vers /production-simple
+- [ ] Run migration Supabase production table
+- [ ] Intégrer Supabase real data (après RLS)
 
+## Tests
+- [ ] Production entry (simple/final)
+- [ ] npm run check-db
+- [ ] Full app flow login->production->dashboard
+
+## Deploy
+- [ ] npm run build
+- [ ] Netlify deploy

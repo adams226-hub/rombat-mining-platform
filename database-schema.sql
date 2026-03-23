@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- TYPES ENUM
 DO $$ BEGIN
-    CREATE TYPE user_role AS ENUM ('admin', 'supervisor', 'operator', 'viewer');
+    CREATE TYPE user_role AS ENUM ('admin', 'supervisor', 'operator', 'viewer', 'directeur', 'chef_de_site', 'comptable');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN

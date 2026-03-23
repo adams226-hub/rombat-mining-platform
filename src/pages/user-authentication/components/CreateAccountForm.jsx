@@ -73,7 +73,7 @@ export default function CreateAccountForm({ onSuccess }) {
       const { data, error } = await miningService.createUser('admin', newUser);
       if (error) {
         console.error('Erreur création utilisateur:', error);
-        setErrors({ form: 'Erreur lors de la création du compte. Réessayez.' });
+        setErrors({ form: error.message || 'Erreur lors de la création du compte. Réessayez.' });
         return;
       }
 

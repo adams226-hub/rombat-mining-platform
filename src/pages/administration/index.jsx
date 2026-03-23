@@ -77,7 +77,7 @@ export default function Administration() {
       const result = await miningService.createUser('admin', {
         username: newUser.username,
         email: newUser.email,
-        password_hash: 'default_password', // À remplacer par un vrai hash
+        password_hash: 'temp_password_123', // Mot de passe temporaire
         full_name: newUser.full_name,
         role: newUser.role,
         department: newUser.department,
@@ -95,10 +95,10 @@ export default function Administration() {
         role: 'operator',
         department: ''
       });
-      alert('Utilisateur ajouté avec succès!');
+      alert('Utilisateur ajouté avec succès! Mot de passe temporaire: temp_password_123');
     } catch (error) {
       console.error('Erreur lors de l\'ajout de l\'utilisateur:', error);
-      alert('Erreur lors de l\'ajout de l\'utilisateur');
+      alert('Erreur lors de l\'ajout de l\'utilisateur: ' + (error.message || 'Erreur inconnue'));
     }
   };
 
