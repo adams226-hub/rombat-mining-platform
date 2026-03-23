@@ -8,7 +8,15 @@ import { miningService } from "../../config/supabase.js";
 export default function Administration() {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [userStats, setUserStats] = useState({
+    total_users: 0,
+    active_users: 0,
+    inactive_users: 0,
+    admin_users: 0,
+    updated_at: null
+  });
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
   const [activeTab, setActiveTab] = useState('users'); // 'users' ou 'settings'
   
   // Modals
@@ -16,6 +24,7 @@ export default function Administration() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+
   
   // États des formulaires
   const [newUser, setNewUser] = useState({
@@ -49,10 +58,26 @@ export default function Administration() {
 
   useEffect(() => {
     loadUsers();
+    loadStats();
   }, []);
+
+  const loadStats = async () => {
+    try {
+      setLoadingStats(true);
+      const result = await miningService.getUserStats('admin');
+      if (result.error) throw result.error;
+      setUserStats(result.data || userStats);
+    } catch (error) {
+      console.error('Erreur lors du chargement des stats:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
 
   const loadUsers = async () => {
     try {
+      setLoadingUsers(true);
       const result = await miningService.getUsers('admin');
       if (result.error) throw result.error;
       
@@ -62,12 +87,13 @@ export default function Administration() {
       // Fallback vers des données vides en cas d'erreur
       setUsers([]);
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
   };
 
+
   // Ajouter un utilisateur
-  const handleAddUser = async () => {
+      const handleAddUser = async () => {
     try {
       if (!newUser.username || !newUser.email || !newUser.full_name) {
         alert('Veuillez remplir tous les champs obligatoires');
@@ -86,7 +112,7 @@ export default function Administration() {
 
       if (result.error) throw result.error;
 
-      await loadUsers(); // Recharger la liste
+      await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
       setShowAddModal(false);
       setNewUser({
         username: '',
@@ -101,6 +127,7 @@ export default function Administration() {
       alert('Erreur lors de l\'ajout de l\'utilisateur: ' + (error.message || 'Erreur inconnue'));
     }
   };
+
 
   // Modifier un utilisateur
   const handleEditUser = (user) => {
@@ -133,7 +160,7 @@ export default function Administration() {
 
       if (result.error) throw result.error;
 
-      await loadUsers(); // Recharger la liste
+      await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
       setShowEditModal(false);
       setSelectedUser(null);
       alert('Utilisateur modifié avec succès!');
@@ -142,6 +169,7 @@ export default function Administration() {
       alert('Erreur lors de la modification: ' + (error.message || 'Erreur inconnue'));
     }
   };
+
 
   // Activer/Désactiver un utilisateur
   const handleToggleUserStatus = async (userId) => {
@@ -155,12 +183,13 @@ export default function Administration() {
 
       if (result.error) throw result.error;
 
-      await loadUsers(); // Recharger la liste
+      await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
     } catch (error) {
       console.error("Erreur changement statut utilisateur:", error);
       alert('Erreur lors du changement de statut: ' + (error.message || 'Erreur inconnue'));
     }
   };
+
 
   // Supprimer un utilisateur
   const handleDeleteUser = async (userId) => {
@@ -170,7 +199,7 @@ export default function Administration() {
 
         if (result.error) throw result.error;
 
-        await loadUsers(); // Recharger la liste
+        await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
         alert('Utilisateur supprimé avec succès!');
       }
     } catch (error) {
@@ -178,6 +207,7 @@ export default function Administration() {
       alert('Erreur lors de la suppression: ' + (error.message || 'Erreur inconnue'));
     }
   };
+
 
   // Sauvegarder les paramètres
   const handleSaveSettings = () => {
@@ -288,7 +318,9 @@ export default function Administration() {
                 </div>
                 <div>
                   <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Total Utilisateurs</p>
-                  <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{users.length}</p>
+                  <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>
+                    {loadingStats ? '...' : userStats.total_users}
+                  </p>
                 </div>
               </div>
             </div>
@@ -300,7 +332,7 @@ export default function Administration() {
                 <div>
                   <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Actifs</p>
                   <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>
-                    {users.filter(u => u.is_active).length}
+                    {loadingStats ? '...' : userStats.active_users}
                   </p>
                 </div>
               </div>
@@ -313,7 +345,7 @@ export default function Administration() {
                 <div>
                   <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Admins</p>
                   <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>
-                    {users.filter(u => u.role === 'admin').length}
+                    {loadingStats ? '...' : userStats.admin_users}
                   </p>
                 </div>
               </div>
@@ -326,12 +358,13 @@ export default function Administration() {
                 <div>
                   <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Inactifs</p>
                   <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>
-                    {users.filter(u => !u.is_active).length}
+                    {loadingStats ? '...' : userStats.inactive_users}
                   </p>
                 </div>
               </div>
             </div>
           </div>
+
 
           {/* Users table */}
           <div className="rounded-xl border" style={{ background: "var(--color-card)" }}>
@@ -354,13 +387,14 @@ export default function Administration() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loading ? (
+                  {loadingUsers ? (
                     <tr>
                       <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                         Chargement...
                       </td>
                     </tr>
                   ) : users.length === 0 ? (
+
                     <tr>
                       <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                         Aucun utilisateur trouvé

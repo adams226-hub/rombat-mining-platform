@@ -16,6 +16,7 @@ import FuelManagement from "./pages/fuel-management";
 import Accounting from "./pages/accounting";
 import Reports from "./pages/reports";
 import Administration from "./pages/administration";
+import AdminComplete from "./pages/administration/admin-complete";
 import StockManagement from "./pages/stock-management";
 
 // Composant pour la redirection automatique basée sur le rôle
@@ -149,6 +150,13 @@ const AppRoutes = () => {
       <Route path="/administration" element={
         <ProtectedRouteWrapper allowedRoles={['admin']}>
           <Administration />
+        </ProtectedRouteWrapper>
+      } />
+      
+      {/* Route Administration Complète - avec statistiques */}
+      <Route path="/admin-complete" element={
+        <ProtectedRouteWrapper allowedRoles={['admin']}>
+          <AdminComplete />
         </ProtectedRouteWrapper>
       } />
       

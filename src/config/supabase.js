@@ -20,10 +20,35 @@ export const miningService = {
   async getUsers(userRole) {
     const denied = ensureRoleAccess(userRole, ['admin']);
     if (denied) return denied;
-    const { data, error } = await supabase
-      .from('users')
-      .select('*');
-    return { data, error };
+    
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*');
+      
+      if (error) {
+        console.warn('Users RLS Error, using localStorage fallback:', error.message);
+        // Fallback: Get from localStorage (both admin users and auth users)
+        const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        const mergedData = [...adminUsers, ...authUsers];
+        return { data: mergedData, error: null };
+      }
+      
+      // Merge with fallback users if any
+      const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      const mergedData = [...(data || []), ...adminUsers, ...authUsers];
+      
+      return { data: mergedData, error };
+    } catch (err) {
+      console.error('Users service error:', err);
+      // Fallback: Get from localStorage
+      const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      const mergedData = [...adminUsers, ...authUsers];
+      return { data: mergedData, error: null };
+    }
   },
 
   async getUserByEmail(email) {
@@ -47,7 +72,6 @@ export const miningService = {
 
     try {
       const payload = {
-        id: Date.now().toString(),
         ...user,
         role: user.role,
         is_active: user.is_active ?? true,
@@ -66,9 +90,28 @@ export const miningService = {
         console.warn('User creation RLS Error, using localStorage fallback:', error.message);
         // Fallback: Store in localStorage
         const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        users.push(payload);
+        const fallbackUser = {
+          id: Date.now().toString(), // Generate ID for fallback
+          ...payload,
+          password: 'temp_password_123' // Add password for authentication
+        };
+        users.push(fallbackUser);
         localStorage.setItem('users_fallback', JSON.stringify(users));
-        return { data: [payload], error: null };
+        
+        // Also add to auth system
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        authUsers.push({
+          id: fallbackUser.id,
+          username: fallbackUser.username,
+          password: 'temp_password_123',
+          email: fallbackUser.email,
+          full_name: fallbackUser.full_name,
+          role: fallbackUser.role,
+          department: fallbackUser.department
+        });
+        localStorage.setItem('auth_users', JSON.stringify(authUsers));
+        
+        return { data: [fallbackUser], error: null };
       }
 
       return { data, error };
@@ -76,16 +119,129 @@ export const miningService = {
       console.error('User creation error:', err);
       // Fallback: Store in localStorage
       const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const payload = {
-        id: Date.now().toString(),
+      const fallbackUser = {
+        id: Date.now().toString(), // Generate ID for fallback
         ...user,
         role: user.role,
         is_active: user.is_active ?? true,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        password: 'temp_password_123' // Add password for authentication
       };
-      users.push(payload);
+      users.push(fallbackUser);
       localStorage.setItem('users_fallback', JSON.stringify(users));
-      return { data: [payload], error: null };
+      
+      // Also add to auth system
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      authUsers.push({
+        id: fallbackUser.id,
+        username: fallbackUser.username,
+        password: 'temp_password_123',
+        email: fallbackUser.email,
+        full_name: fallbackUser.full_name,
+        role: fallbackUser.role,
+        department: fallbackUser.department
+      });
+      localStorage.setItem('auth_users', JSON.stringify(authUsers));
+      
+      return { data: [fallbackUser], error: null };
+    }
+  },
+
+  async updateUser(userRole, userId, updates) {
+    const denied = ensureRoleAccess(userRole, ['admin']);
+    if (denied) return denied;
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId);
+
+      if (error) {
+        console.warn('User update RLS Error, using localStorage fallback:', error.message);
+        // Fallback: Update in localStorage
+        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+        const index = users.findIndex(u => u.id === userId);
+        if (index !== -1) {
+          users[index] = { ...users[index], ...updates };
+          localStorage.setItem('users_fallback', JSON.stringify(users));
+          
+          // Also update auth system
+          const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+          const authIndex = authUsers.findIndex(u => u.id === userId);
+          if (authIndex !== -1) {
+            authUsers[authIndex] = { ...authUsers[authIndex], ...updates };
+            localStorage.setItem('auth_users', JSON.stringify(authUsers));
+          }
+          
+          return { data: [users[index]], error: null };
+        }
+        return { data: null, error: new Error('User not found') };
+      }
+
+      return { data, error };
+    } catch (err) {
+      console.error('User update error:', err);
+      // Fallback: Update in localStorage
+      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+      const index = users.findIndex(u => u.id === userId);
+      if (index !== -1) {
+        users[index] = { ...users[index], ...updates };
+        localStorage.setItem('users_fallback', JSON.stringify(users));
+        
+        // Also update auth system
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        const authIndex = authUsers.findIndex(u => u.id === userId);
+        if (authIndex !== -1) {
+          authUsers[authIndex] = { ...authUsers[authIndex], ...updates };
+          localStorage.setItem('auth_users', JSON.stringify(authUsers));
+        }
+        
+        return { data: [users[index]], error: null };
+      }
+      return { data: null, error: new Error('User not found') };
+    }
+  },
+
+  async deleteUser(userRole, userId) {
+    const denied = ensureRoleAccess(userRole, ['admin']);
+    if (denied) return denied;
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) {
+        console.warn('User delete RLS Error, using localStorage fallback:', error.message);
+        // Fallback: Delete from localStorage
+        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+        const filteredUsers = users.filter(u => u.id !== userId);
+        localStorage.setItem('users_fallback', JSON.stringify(filteredUsers));
+        
+        // Also delete from auth system
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        const filteredAuthUsers = authUsers.filter(u => u.id !== userId);
+        localStorage.setItem('auth_users', JSON.stringify(filteredAuthUsers));
+        
+        return { data: null, error: null };
+      }
+
+      return { data, error };
+    } catch (err) {
+      console.error('User delete error:', err);
+      // Fallback: Delete from localStorage
+      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+      const filteredUsers = users.filter(u => u.id !== userId);
+      localStorage.setItem('users_fallback', JSON.stringify(filteredUsers));
+      
+      // Also delete from auth system
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      const filteredAuthUsers = authUsers.filter(u => u.id !== userId);
+      localStorage.setItem('auth_users', JSON.stringify(filteredAuthUsers));
+      
+      return { data: null, error: null };
     }
   },
 
@@ -508,6 +664,75 @@ export const miningService = {
     return { data: stockSummary, error: null };
   },
 
+// User Stats (new)
+  async getUserStats(userRole) {
+    const denied = ensureRoleAccess(userRole, ['admin']);
+    if (denied) return denied;
+
+    const STAT_ID = '00000000-0000-0000-0000-000000000001';
+
+    try {
+      const { data, error } = await supabase
+        .from('user_stats')
+        .select('*')
+        .eq('id', STAT_ID)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('UserStats RLS Error, using localStorage fallback:', error.message);
+        // Fallback: Calculate from localStorage users
+        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        const allUsers = [...users, ...authUsers];
+        return {
+          data: {
+            total_users: allUsers.length,
+            active_users: allUsers.filter(u => u.is_active !== false).length,
+            inactive_users: allUsers.filter(u => u.is_active === false).length,
+            admin_users: allUsers.filter(u => u.role === 'admin').length,
+            updated_at: new Date().toISOString()
+          },
+          error: null
+        };
+      }
+
+      // Merge with localStorage if no Supabase data
+      if (!data) {
+        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+        const allUsers = [...users, ...authUsers];
+        return {
+          data: {
+            total_users: allUsers.length,
+            active_users: allUsers.filter(u => u.is_active !== false).length,
+            inactive_users: allUsers.filter(u => u.is_active === false).length,
+            admin_users: allUsers.filter(u => u.role === 'admin').length,
+            updated_at: new Date().toISOString()
+          },
+          error: null
+        };
+      }
+
+      return { data, error };
+    } catch (err) {
+      console.error('UserStats service error:', err);
+      // Fallback: Calculate from localStorage
+      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      const allUsers = [...users, ...authUsers];
+      return {
+        data: {
+          total_users: allUsers.length,
+          active_users: allUsers.filter(u => u.is_active !== false).length,
+          inactive_users: allUsers.filter(u => u.is_active === false).length,
+          admin_users: allUsers.filter(u => u.role === 'admin').length,
+          updated_at: new Date().toISOString()
+        },
+        error: null
+      };
+    }
+  },
+
   // Reports
   async getUsers(userRole) {
     const denied = ensureRoleAccess(userRole, ['admin']);
@@ -516,8 +741,7 @@ export const miningService = {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
 
       if (error) {
         console.warn('Users RLS Error, using localStorage fallback:', error.message);
@@ -554,4 +778,5 @@ export const miningService = {
     return { data, error };
   }
 };
+
 
