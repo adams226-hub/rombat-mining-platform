@@ -72,7 +72,33 @@ export default function ProductionManagement() {
   const loadProductionData = async () => {
     try {
       setLoading(true);
-      const { user } = useAuth();
+      const auth = useAuth();
+      const user = auth?.user; // Récupérer l'utilisateur depuis le contexte
+      
+      if (!user) {
+        console.warn('No user authenticated, using mock data');
+        // Utiliser données mock si pas d'utilisateur
+        const mockData = [
+          {
+            id: '1',
+            date: '2026-03-15',
+            site: 'Site Principal',
+            shift: 'Jour',
+            operator: 'Demo User',
+            notes: 'Production démonstration',
+            dimensions: [
+              { dimension: 'Minerai', quantity: 280 },
+              { dimension: 'Forage', quantity: 145 },
+              { dimension: '0/4', quantity: 195 },
+              { dimension: '0/5', quantity: 175 }
+            ]
+          }
+        ];
+        setProductionData(mockData);
+        setLoading(false);
+        return;
+      }
+      
       const { data, error } = await miningService.getProductionData(user?.role);
       
       if (error) {
