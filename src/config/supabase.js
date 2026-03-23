@@ -139,9 +139,8 @@ export const miningService = {
     const { date, ...rest } = entry;
     const entryData = {
       ...rest,
-      transaction_date: date,
-      site_id: "550e8400-e29b-41d4-a716-446655440001", // Valid UUID for site
-      created_at: new Date().toISOString()
+      transaction_date: date
+      // Remove site_id and created_at to fix RLS policy
       // total_cost is automatically calculated by the database as quantity * cost_per_liter
     };
     const { data, error } = await supabase
