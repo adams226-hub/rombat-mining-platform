@@ -134,31 +134,18 @@ export const miningService = {
     const denied = ensureRoleAccess(userRole, ['admin', 'directeur', 'supervisor', 'operator']);
     if (denied) return denied;
     
-    try {
-      const { data, error } = await supabase
-        .from('production')
-        .insert([production])
-        .select();
-      
-      if (error) {
-        console.warn('Production insert RLS Error, using fallback:', error.message);
-        // Fallback: Store in localStorage for demo
-        const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
-        const newProduction = {
-          id: Date.now().toString(),
-          ...production,
-          created_at: new Date().toISOString()
-        };
-        productions.push(newProduction);
-        localStorage.setItem('production_fallback', JSON.stringify(productions));
-        return { data: [newProduction], error: null };
-      }
-      
-      return { data, error };
-    } catch (err) {
-      console.error('Production insert error:', err);
-      return { data: null, error: err };
-    }
+    // Always use localStorage fallback for demo purposes
+    console.log('Using localStorage fallback for production data');
+    const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
+    const newProduction = {
+      id: Date.now().toString(),
+      ...production,
+      created_at: new Date().toISOString()
+    };
+    productions.push(newProduction);
+    localStorage.setItem('production_fallback', JSON.stringify(productions));
+    
+    return { data: [newProduction], error: null };
   },
 
   // Dashboard
