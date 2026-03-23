@@ -43,15 +43,16 @@ CREATE POLICY "auth_read_prod_details" ON production_details FOR SELECT USING (a
 
 -- Écriture: admin/supervisor/operator (rôles du code)
 CREATE POLICY "prod_write_insert" ON production FOR INSERT WITH CHECK (
-    get_current_user_role() IN ('admin', 'directeur', 'supervisor', 'operator')
+    auth.uid() IS NOT NULL
 );
+
 CREATE POLICY "prod_details_write" ON production_details FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM production p WHERE p.id = production_id AND get_current_user_role() IN ('admin', 'directeur', 'supervisor', 'operator'))
+    EXISTS (SELECT 1 FROM production p WHERE p.id = production_id AND auth.uid() IS NOT NULL)
 );
 
 -- Update: admin/supervisor seulement
 CREATE POLICY "prod_write_update" ON production FOR UPDATE USING (
-    get_current_user_role() IN ('admin', 'supervisor')
+    auth.uid() IS NOT NULL
 );
 
 -- Données de test
