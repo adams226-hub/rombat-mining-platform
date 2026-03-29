@@ -42,7 +42,7 @@ export default function ExportPanel() {
     });
     
     content += `\nTotal: ${total} tonnes\n`;
-    content += `\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+    content += `\nGénéré par Amp Mines et Carrieres Platform\n${new Date().toLocaleString()}`;
     
     return content;
   };
@@ -68,11 +68,11 @@ export default function ExportPanel() {
     content += "-".repeat(50) + "\n";
     
     fuelData.forEach(f => {
-      content += `${f.date} - ${f.equipment}: ${f.quantity}L (${f.cost}€)\n`;
+      content += `${f.date} - ${f.equipment}: ${f.quantity}L (${f.cost}FCFA)\n`;
     });
     
-    content += `\nTotal: ${totalQty}L - Coût: ${totalCost}€\n`;
-    content += `\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+    content += `\nTotal: ${totalQty}L - Coût: ${totalCost}FCFA\n`;
+    content += `\nGénéré par Amp Mines et Carrieres Platform\n${new Date().toLocaleString()}`;
     
     return content;
   };
@@ -104,22 +104,22 @@ export default function ExportPanel() {
     content += "REVENUS\n";
     content += "-".repeat(30) + "\n";
     income.forEach(i => {
-      content += `${i.category}: ${i.amount.toFixed(2)}€\n`;
+      content += `${i.category}: ${i.amount.toFixed(2)}FCFA\n`;
     });
-    content += `Total Revenus: ${totalIncome.toFixed(2)}€\n\n`;
+    content += `Total Revenus: ${totalIncome.toFixed(2)}FCFA\n\n`;
     
     content += "DÉPENSES\n";
     content += "-".repeat(30) + "\n";
     expenses.forEach(e => {
-      content += `${e.category}: ${e.amount.toFixed(2)}€\n`;
+      content += `${e.category}: ${e.amount.toFixed(2)}FCFA\n`;
     });
-    content += `Total Dépenses: ${totalExpenses.toFixed(2)}€\n\n`;
+    content += `Total Dépenses: ${totalExpenses.toFixed(2)}FCFA\n\n`;
     
     content += "RÉSULTAT\n";
     content += "-".repeat(30) + "\n";
-    content += `Bénéfice Net: ${profit.toFixed(2)}€\n`;
+    content += `Bénéfice Net: ${profit.toFixed(2)}FCFA\n`;
     content += `Marge: ${((profit / totalIncome) * 100).toFixed(1)}%\n`;
-    content += `\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+    content += `\nGénéré par Amp Mines et Carrieres Platform\n${new Date().toLocaleString()}`;
     
     return content;
   };
@@ -149,7 +149,7 @@ export default function ExportPanel() {
     
     const activeCount = equipment.filter(e => e.status === 'Actif').length;
     content += `Équipements Actifs: ${activeCount}/${equipment.length}\n`;
-    content += `\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+    content += `\nGénéré par Amp Mines et Carrieres Platform\n${new Date().toLocaleString()}`;
     
     return content;
   };
@@ -190,7 +190,7 @@ export default function ExportPanel() {
 <body>
   ${contentHtml}
   <div class="footer">
-    Généré par ROMBAT Platform le ${new Date().toLocaleString('fr-FR')}
+    Généré par Amp Mines et Carrieres Platform le ${new Date().toLocaleString('fr-FR')}
   </div>
   <script>window.onload = function() { window.print(); }</script>
 </body>
@@ -234,7 +234,7 @@ export default function ExportPanel() {
       
       <h2>Résumé Financier</h2>
       <table>
-        <tr><th>Catégorie</th><th>Montant (€)</th></tr>
+        <tr><th>Catégorie</th><th>Montant (FCFA)</th></tr>
         <tr><td>Revenus</td><td>60 700,00</td></tr>
         <tr><td>Dépenses</td><td>13 960,00</td></tr>
         <tr class="total"><td>Bénéfice Net</td><td>46 740,00</td></tr>
@@ -325,7 +325,7 @@ export default function ExportPanel() {
         filename = `ROMBAT_Rapport_Equipement_${new Date().toISOString().split('T')[0]}.txt`;
         break;
       default:
-        content = "Rapport ROMBAT";
+        content = "Rapport Amp Mines et Carrieres";
         filename = `ROMBAT_Rapport_${new Date().toISOString().split('T')[0]}.txt`;
     }
     

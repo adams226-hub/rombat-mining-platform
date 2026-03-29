@@ -34,7 +34,7 @@ export default function AdminWorking() {
       id: '1',
       username: 'admin',
       email: 'admin@rombat.com',
-      full_name: 'Administrateur ROMBAT',
+      full_name: 'Amp Mines et Carrieres',
       role: 'admin',
       department: 'IT',
       is_active: true

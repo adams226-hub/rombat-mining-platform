@@ -8,7 +8,7 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [formData, setFormData] = useState({
-    username: '',
+    email: '',
     password: ''
   });
   const [loading, setLoading] = useState(false);
@@ -20,29 +20,11 @@ export default function Login() {
     setError('');
 
     try {
-      const result = login(formData.username, formData.password);
-      
+      const result = await login(formData.email, formData.password);
+
       if (result.success) {
-        // Redirection selon le rôle
-        switch (result.user.role) {
-          case 'admin':
-          case 'directeur':
-            navigate('/executive-dashboard');
-            break;
-          case 'chef_de_site':
-            navigate('/equipment-management');
-            break;
-          case 'comptable':
-          case 'equipement':
-            navigate('/accounting');
-            break;
-          case 'supervisor':
-          case 'operator':
-            navigate('/production-management');
-            break;
-          default:
-            navigate('/executive-dashboard');
-        }
+        // La redirection est gérée par RoleBasedRedirect dans Routes.jsx
+        navigate('/');
       } else {
         setError(result.error);
       }
@@ -55,10 +37,7 @@ export default function Login() {
   };
 
   const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
   };
 
@@ -67,11 +46,11 @@ export default function Login() {
       <div className="w-full max-w-md p-8">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div 
+          <div
             className="mx-auto mb-4"
-            style={{ 
-              width: '80px', 
-              height: '80px', 
+            style={{
+              width: '80px',
+              height: '80px',
               borderRadius: '20px',
               background: 'rgba(255, 255, 255, 0.2)',
               display: 'flex',
@@ -96,29 +75,29 @@ export default function Login() {
           <h2 className="text-2xl font-bold mb-6" style={{ color: "var(--color-foreground)" }}>
             Connexion
           </h2>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
                 {error}
               </div>
             )}
-            
+
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
-                Nom d'utilisateur
+                Adresse email
               </label>
               <div className="relative">
-                <Icon 
-                  name="User" 
-                  size={20} 
-                  color="var(--color-muted-foreground)" 
+                <Icon
+                  name="Mail"
+                  size={20}
+                  color="var(--color-muted-foreground)"
                   className="absolute left-3 top-3"
                 />
                 <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
+                  type="email"
+                  name="email"
+                  value={formData.email}
                   onChange={handleInputChange}
                   className="w-full p-3 pl-10 border rounded-lg"
                   style={{
@@ -126,8 +105,9 @@ export default function Login() {
                     background: "var(--color-background)",
                     color: "var(--color-foreground)"
                   }}
-                  placeholder="Entrez votre nom d'utilisateur"
+                  placeholder="exemple@rombat.com"
                   required
+                  autoComplete="email"
                 />
               </div>
             </div>
@@ -137,10 +117,10 @@ export default function Login() {
                 Mot de passe
               </label>
               <div className="relative">
-                <Icon 
-                  name="Lock" 
-                  size={20} 
-                  color="var(--color-muted-foreground)" 
+                <Icon
+                  name="Lock"
+                  size={20}
+                  color="var(--color-muted-foreground)"
                   className="absolute left-3 top-3"
                 />
                 <input
@@ -156,6 +136,7 @@ export default function Login() {
                   }}
                   placeholder="Entrez votre mot de passe"
                   required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -170,48 +151,37 @@ export default function Login() {
             </Button>
           </form>
 
-          {/* Comptes de démonstration */}
+          {/* Comptes de référence */}
           <div className="mt-6 p-4 rounded-lg" style={{ background: "var(--color-muted)" }}>
             <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--color-foreground)" }}>
-              Comptes de démonstration :
+              Comptes disponibles :
             </h3>
-            <div className="space-y-2 text-xs">
+            <div className="space-y-1 text-xs" style={{ color: "var(--color-muted-foreground)" }}>
               <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Admin:</span>
-                <span style={{ color: "var(--color-foreground)" }}>admin / admin123</span>
+                <span>Admin:</span>
+                <span style={{ color: "var(--color-foreground)" }}>admin@rombat.com</span>
               </div>
               <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Directeur:</span>
-                <span style={{ color: "var(--color-foreground)" }}>directeur / dir123</span>
+                <span>Directeur:</span>
+                <span style={{ color: "var(--color-foreground)" }}>directeur@rombat.com</span>
               </div>
               <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Chef de site:</span>
-                <span style={{ color: "var(--color-foreground)" }}>chefsite / chef123</span>
+                <span>Superviseur:</span>
+                <span style={{ color: "var(--color-foreground)" }}>supervisor@rombat.com</span>
               </div>
               <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Superviseur:</span>
-                <span style={{ color: "var(--color-foreground)" }}>supervisor / sup123</span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Comptable:</span>
-                <span style={{ color: "var(--color-foreground)" }}>comptable / comp123</span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Opérateur:</span>
-                <span style={{ color: "var(--color-foreground)" }}>operator1 / op123</span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ color: "var(--color-muted-foreground)" }}>Équipement:</span>
-                <span style={{ color: "var(--color-foreground)" }}>equipement / equip123</span>
+                <span>Comptable:</span>
+                <span style={{ color: "var(--color-foreground)" }}>comptable@rombat.com</span>
               </div>
             </div>
+            <p className="text-xs mt-2" style={{ color: "var(--color-muted-foreground)" }}>
+              Les comptes sont créés via le panneau Administration.
+            </p>
           </div>
         </div>
 
         <div className="text-center mt-6">
-          <p className="text-white/80 text-sm">
-            © 2026 RomBat Exploration & Mines
-          </p>
+          <p className="text-white/80 text-sm">© 2026 RomBat Exploration & Mines</p>
         </div>
       </div>
     </div>

@@ -4,13 +4,20 @@ import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
+import { miningService } from "../../config/supabase";
+import { useAuth } from "../../context/AuthContext";
+import { toastSuccess, toastError } from "../../utils/toast";
 
 export default function Accounting() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  
+  const [viewTransaction, setViewTransaction] = useState(null);
+  const [editTransaction, setEditTransaction] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
   const [newTransaction, setNewTransaction] = useState({
     date: '',
     type: 'income',
@@ -28,50 +35,22 @@ export default function Accounting() {
   }, []);
 
   const loadTransactions = async () => {
-    const mockData = [
-      {
-        id: 1,
-        date: "2026-03-05",
-        type: "expense",
-        category: "Carburant",
-        description: "Achat carburant Site A",
-        amount: 187.50,
-        status: "paid",
-        reference: "CAR-2026-03-001"
-      },
-      {
-        id: 2,
-        date: "2026-03-04",
-        type: "expense",
-        category: "Maintenance",
-        description: "Maintenance excavateur CAT 349",
-        amount: 1250.00,
-        status: "pending",
-        reference: "MAINT-2026-03-001"
-      },
-      {
-        id: 3,
-        date: "2026-03-03",
-        type: "income",
-        category: "Vente minerais",
-        description: "Vente or - Mars 2026",
-        amount: 45000.00,
-        status: "paid",
-        reference: "VENTE-2026-03-001"
-      },
-      {
-        id: 4,
-        date: "2026-03-02",
-        type: "expense",
-        category: "Salaires",
-        description: "Paie mensuelle opérateurs",
-        amount: 8500.00,
-        status: "paid",
-        reference: "SALAIRE-2026-03-001"
-      }
-    ];
-    setTransactions(mockData);
-    setLoading(false);
+    try {
+      setLoading(true);
+      const { data, error } = await miningService.getFinancialTransactions();
+      if (error) throw error;
+      // Normaliser les noms de colonnes (transaction_date → date, payment_status → status)
+      const normalized = (data || []).map(t => ({
+        ...t,
+        date: t.transaction_date || t.date,
+        status: t.payment_status || t.status || 'pending'
+      }));
+      setTransactions(normalized);
+    } catch (err) {
+      console.error('Erreur chargement transactions:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -122,58 +101,70 @@ export default function Accounting() {
   });
 
   const handleAddTransaction = async () => {
+    if (!newTransaction.date || !newTransaction.category || !newTransaction.description || !newTransaction.amount) {
+      toastError('Veuillez remplir les champs obligatoires');
+      return;
+    }
     try {
-      if (!newTransaction.date || !newTransaction.category || !newTransaction.description || !newTransaction.amount) {
-        alert('Veuillez remplir les champs obligatoires');
-        return;
-      }
-
-      const transactionToAdd = {
-        id: Date.now(),
+      const { error } = await miningService.addFinancialTransaction({
         date: newTransaction.date,
         type: newTransaction.type,
         category: newTransaction.category,
         description: newTransaction.description,
-        amount: parseFloat(newTransaction.amount),
+        amount: newTransaction.amount,
         reference: newTransaction.reference,
         client_supplier: newTransaction.client_supplier,
         payment_method: newTransaction.payment_method,
-        status: 'pending',
+        status: 'paid',
         notes: newTransaction.notes
-      };
-
-      setTransactions([transactionToAdd, ...transactions]);
-      
-      setNewTransaction({
-        date: '',
-        type: 'income',
-        category: '',
-        description: '',
-        amount: '',
-        reference: '',
-        client_supplier: '',
-        payment_method: '',
-        notes: ''
       });
-      
+
+      if (error) throw error;
+
+      await loadTransactions();
       setShowAddModal(false);
-      alert(`Transaction enregistrée: ${newTransaction.type === 'income' ? '+' : '-'}${parseFloat(newTransaction.amount).toFixed(2)} €`);
-      
+      setNewTransaction({ date: '', type: 'income', category: '', description: '', amount: '', reference: '', client_supplier: '', payment_method: '', notes: '' });
+      toastSuccess(`Transaction enregistrée: ${newTransaction.type === 'income' ? '+' : '-'}${parseFloat(newTransaction.amount).toLocaleString('fr-FR')} FCFA`);
     } catch (error) {
       console.error("Erreur ajout transaction:", error);
-      alert("Erreur lors de l'enregistrement de la transaction");
+      toastError(`Erreur: ${error.message}`);
     }
   };
 
-  const handleDeleteTransaction = async (transactionId) => {
+  const handleDeleteTransaction = async () => {
+    if (!confirmDeleteId) return;
     try {
-      if (confirm('Êtes-vous sûr de vouloir supprimer cette transaction ?')) {
-        setTransactions(transactions.filter(t => t.id !== transactionId));
-        alert('Transaction supprimée avec succès');
-      }
+      const { error } = await miningService.deleteFinancialTransaction(confirmDeleteId);
+      if (error) throw error;
+      setConfirmDeleteId(null);
+      await loadTransactions();
+      toastSuccess('Transaction supprimée');
     } catch (error) {
-      console.error("Erreur suppression transaction:", error);
-      alert("Erreur lors de la suppression de la transaction");
+      toastError('Erreur suppression: ' + error.message);
+      setConfirmDeleteId(null);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTransaction) return;
+    try {
+      const { error } = await miningService.updateFinancialTransaction(editTransaction.id, {
+        transaction_date: editTransaction.date,
+        type: editTransaction.type,
+        category: editTransaction.category,
+        description: editTransaction.description,
+        amount: parseFloat(editTransaction.amount),
+        reference: editTransaction.reference || null,
+        client_supplier: editTransaction.client_supplier || null,
+        payment_method: editTransaction.payment_method || null,
+        notes: editTransaction.notes || null,
+      });
+      if (error) throw error;
+      setEditTransaction(null);
+      await loadTransactions();
+      toastSuccess('Transaction modifiée');
+    } catch (error) {
+      toastError('Erreur modification: ' + error.message);
     }
   };
 
@@ -200,7 +191,7 @@ export default function Accounting() {
   };
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres Exploration & Mines">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -238,7 +229,7 @@ export default function Accounting() {
             </div>
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Revenus</p>
-              <p className="text-xl font-bold" style={{ color: "var(--color-success)" }}>{totalIncome.toFixed(2)} €</p>
+              <p className="text-xl font-bold" style={{ color: "var(--color-success)" }}>{totalIncome.toFixed(2)} FCFA</p>
             </div>
           </div>
         </div>
@@ -249,7 +240,7 @@ export default function Accounting() {
             </div>
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Dépenses</p>
-              <p className="text-xl font-bold" style={{ color: "var(--color-error)" }}>{totalExpenses.toFixed(2)} €</p>
+              <p className="text-xl font-bold" style={{ color: "var(--color-error)" }}>{totalExpenses.toFixed(2)} FCFA</p>
             </div>
           </div>
         </div>
@@ -261,19 +252,8 @@ export default function Accounting() {
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Bénéfice Net</p>
               <p className="text-xl font-bold" style={{ color: netProfit >= 0 ? "#3182CE" : "var(--color-error)" }}>
-                {netProfit.toFixed(2)} €
+                {netProfit.toFixed(2)} FCFA
               </p>
-            </div>
-          </div>
-        </div>
-        <div className="p-4 rounded-xl border" style={{ background: "var(--color-card)" }}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: "rgba(214,158,46,0.12)" }}>
-              <Icon name="Clock" size={20} color="var(--color-warning)" />
-            </div>
-            <div>
-              <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>En Attente</p>
-              <p className="text-xl font-bold" style={{ color: "var(--color-warning)" }}>{pendingExpenses.toFixed(2)} €</p>
             </div>
           </div>
         </div>
@@ -294,7 +274,6 @@ export default function Accounting() {
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Catégorie</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Description</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Montant</th>
-                <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Statut</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Référence</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Actions</th>
               </tr>
@@ -302,13 +281,13 @@ export default function Accounting() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
+                  <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                     Chargement...
                   </td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
+                  <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                     Aucune transaction trouvée
                   </td>
                 </tr>
@@ -330,26 +309,19 @@ export default function Accounting() {
                     <td className="p-4" style={{ color: getTypeColor(item.type), fontWeight: 'bold' }}>
                       {item.type === 'income' ? '+' : '-'}{item.amount.toFixed(2)}
                     </td>
-                    <td className="p-4">
-                      <span className="px-2 py-1 rounded-full text-xs font-medium" 
-                        style={{ 
-                          background: `${getStatusColor(item.status)}15`,
-                          color: getStatusColor(item.status)
-                        }}>
-                        {getStatusText(item.status)}
-                      </span>
-                    </td>
+                   
                     <td className="p-4" style={{ color: "var(--color-foreground)" }}>{item.reference}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" iconName="Eye" />
-                        <Button variant="ghost" size="sm" iconName="Edit" />
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          iconName="Trash2" 
-                          onClick={() => handleDeleteTransaction(item.id)}
-                        />
+                        <button onClick={() => setViewTransaction(item)} title="Voir" style={{ color: "var(--color-muted-foreground)", padding: "4px 6px", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer" }}>
+                          <Icon name="Eye" size={15} />
+                        </button>
+                        <button onClick={() => setEditTransaction({...item})} title="Modifier" style={{ color: "var(--color-primary)", padding: "4px 6px", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer" }}>
+                          <Icon name="Edit" size={15} />
+                        </button>
+                        <button onClick={() => setConfirmDeleteId(item.id)} title="Supprimer" style={{ color: "var(--color-error)", padding: "4px 6px", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer" }}>
+                          <Icon name="Trash2" size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -381,7 +353,7 @@ export default function Accounting() {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => [`${value} €`, 'Montant']} />
+                  <Tooltip formatter={(value) => [`${value} FCFA`, 'Montant']} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -401,8 +373,8 @@ export default function Accounting() {
                 <LineChart data={lineChartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
-                  <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k€`} />
-                  <Tooltip formatter={(value) => [`${value.toLocaleString('fr-FR')} €`, '']} />
+                  <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}kFCFA`} />
+                  <Tooltip formatter={(value) => [`${value.toLocaleString('fr-FR')} FCFA`, '']} />
                   <Legend />
                   <Line type="monotone" dataKey="revenus" stroke="#2C5530" strokeWidth={2} name="Revenus" />
                   <Line type="monotone" dataKey="depenses" stroke="#E53E3E" strokeWidth={2} name="Dépenses" />
@@ -419,155 +391,98 @@ export default function Accounting() {
 
       {/* Modal Ajout Transaction */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="rounded-xl p-6 w-full max-w-2xl" style={{ background: "var(--color-card)" }}>
-            <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>
-              Ajouter une Transaction
-            </h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl w-full max-w-md max-h-[90vh] flex flex-col" style={{ background: "var(--color-card)" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--color-border)" }}>
+              <h3 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Nouvelle Transaction
+              </h3>
+              <button onClick={() => setShowAddModal(false)} style={{ color: "var(--color-muted-foreground)" }} className="hover:opacity-70">✕</button>
+            </div>
+
+            {/* Body scrollable */}
+            <div className="overflow-y-auto px-5 py-4 space-y-3 flex-1">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={newTransaction.date}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Date *</label>
+                  <input type="date" value={newTransaction.date}
                     onChange={(e) => setNewTransaction({...newTransaction, date: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Type *
-                  </label>
-                  <select
-                    value={newTransaction.type}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Type *</label>
+                  <select value={newTransaction.type}
                     onChange={(e) => setNewTransaction({...newTransaction, type: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                   >
                     <option value="income">Revenu</option>
                     <option value="expense">Dépense</option>
                   </select>
                 </div>
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Catégorie *
-                  </label>
-                  <input
-                    type="text"
-                    value={newTransaction.category}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Catégorie *</label>
+                  <input type="text" value={newTransaction.category}
                     onChange={(e) => setNewTransaction({...newTransaction, category: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
-                    placeholder="ex: Ventes matériaux"
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                    placeholder="ex: Ventes"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Montant (€) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={newTransaction.amount}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Montant (FCFA) *</label>
+                  <input type="number" step="0.01" value={newTransaction.amount}
                     onChange={(e) => setNewTransaction({...newTransaction, amount: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
-                    placeholder="ex: 1250.00"
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                    placeholder="0"
                   />
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                  Description *
-                </label>
-                <input
-                  type="text"
-                  value={newTransaction.description}
+                <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Description *</label>
+                <input type="text" value={newTransaction.description}
                   onChange={(e) => setNewTransaction({...newTransaction, description: e.target.value})}
-                  className="w-full p-2 rounded border"
-                  style={{ 
-                    borderColor: "var(--color-border)",
-                    background: "var(--color-background)",
-                    color: "var(--color-foreground)"
-                  }}
+                  className="w-full p-2 rounded border text-sm"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                   placeholder="ex: Vente gravillons Client A"
                 />
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Référence
-                  </label>
-                  <input
-                    type="text"
-                    value={newTransaction.reference}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Référence</label>
+                  <input type="text" value={newTransaction.reference}
                     onChange={(e) => setNewTransaction({...newTransaction, reference: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
-                    placeholder="ex: FACT-2026-03-001"
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                    placeholder="FACT-2026-001"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Client/Fournisseur
-                  </label>
-                  <input
-                    type="text"
-                    value={newTransaction.client_supplier}
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Client/Fournisseur</label>
+                  <input type="text" value={newTransaction.client_supplier}
                     onChange={(e) => setNewTransaction({...newTransaction, client_supplier: e.target.value})}
-                    className="w-full p-2 rounded border"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
-                    placeholder="ex: Société ABC"
+                    className="w-full p-2 rounded border text-sm"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                    placeholder="Société ABC"
                   />
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                  Moyen de paiement
-                </label>
-                <select
-                  value={newTransaction.payment_method}
+                <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Moyen de paiement</label>
+                <select value={newTransaction.payment_method}
                   onChange={(e) => setNewTransaction({...newTransaction, payment_method: e.target.value})}
-                  className="w-full p-2 rounded border"
-                  style={{ 
-                    borderColor: "var(--color-border)",
-                    background: "var(--color-background)",
-                    color: "var(--color-foreground)"
-                  }}
+                  className="w-full p-2 rounded border text-sm"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                 >
                   <option value="">Sélectionner...</option>
                   <option value="virement">Virement bancaire</option>
@@ -576,38 +491,129 @@ export default function Accounting() {
                   <option value="carte">Carte bancaire</option>
                 </select>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                  Notes
-                </label>
-                <textarea
-                  value={newTransaction.notes}
+                <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Notes</label>
+                <textarea value={newTransaction.notes}
                   onChange={(e) => setNewTransaction({...newTransaction, notes: e.target.value})}
-                  className="w-full p-2 rounded border"
-                  style={{ 
-                    borderColor: "var(--color-border)",
-                    background: "var(--color-background)",
-                    color: "var(--color-foreground)"
-                  }}
-                  rows="3"
+                  className="w-full p-2 rounded border text-sm resize-none"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                  rows="2"
                   placeholder="Notes optionnelles..."
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
-              <Button
-                variant="default"
-                onClick={handleAddTransaction}
-              >
+
+            {/* Footer */}
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+              <Button variant="default" onClick={handleAddTransaction} className="flex-1">
                 Ajouter
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowAddModal(false)}
-              >
+              <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">
                 Annuler
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Vue détail */}
+      {viewTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl w-full max-w-sm" style={{ background: "var(--color-card)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--color-border)" }}>
+              <h3 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Détail Transaction</h3>
+              <button onClick={() => setViewTransaction(null)} style={{ color: "var(--color-muted-foreground)", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+            </div>
+            <div className="px-5 py-4 space-y-2 text-sm">
+              {[
+                ['Date', viewTransaction.date],
+                ['Type', viewTransaction.type === 'income' ? 'Revenu' : 'Dépense'],
+                ['Catégorie', viewTransaction.category],
+                ['Description', viewTransaction.description],
+                ['Montant', `${viewTransaction.type === 'income' ? '+' : '-'}${parseFloat(viewTransaction.amount).toLocaleString('fr-FR')} FCFA`],
+                ['Référence', viewTransaction.reference || '—'],
+                ['Client/Fourn.', viewTransaction.client_supplier || '—'],
+                ['Paiement', viewTransaction.payment_method || '—'],
+                ['Notes', viewTransaction.notes || '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-4">
+                  <span style={{ color: "var(--color-muted-foreground)" }}>{label}</span>
+                  <span style={{ color: "var(--color-foreground)", fontWeight: 500 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+              <Button variant="outline" onClick={() => setViewTransaction(null)} className="w-full">Fermer</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Édition */}
+      {editTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl w-full max-w-md max-h-[90vh] flex flex-col" style={{ background: "var(--color-card)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--color-border)" }}>
+              <h3 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Modifier Transaction</h3>
+              <button onClick={() => setEditTransaction(null)} style={{ color: "var(--color-muted-foreground)", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4 space-y-3 flex-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Date</label>
+                  <input type="date" value={editTransaction.date} onChange={(e) => setEditTransaction({...editTransaction, date: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Type</label>
+                  <select value={editTransaction.type} onChange={(e) => setEditTransaction({...editTransaction, type: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}>
+                    <option value="income">Revenu</option>
+                    <option value="expense">Dépense</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Catégorie</label>
+                  <input type="text" value={editTransaction.category} onChange={(e) => setEditTransaction({...editTransaction, category: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Montant (FCFA)</label>
+                  <input type="number" value={editTransaction.amount} onChange={(e) => setEditTransaction({...editTransaction, amount: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Description</label>
+                <input type="text" value={editTransaction.description} onChange={(e) => setEditTransaction({...editTransaction, description: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Référence</label>
+                  <input type="text" value={editTransaction.reference || ''} onChange={(e) => setEditTransaction({...editTransaction, reference: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--color-muted-foreground)" }}>Client/Fournisseur</label>
+                  <input type="text" value={editTransaction.client_supplier || ''} onChange={(e) => setEditTransaction({...editTransaction, client_supplier: e.target.value})} className="w-full p-2 rounded border text-sm" style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }} />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 px-5 py-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+              <Button variant="default" onClick={handleSaveEdit} className="flex-1">Enregistrer</Button>
+              <Button variant="outline" onClick={() => setEditTransaction(null)} className="flex-1">Annuler</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmation Suppression */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl w-full max-w-sm p-6" style={{ background: "var(--color-card)" }}>
+            <h3 className="text-base font-semibold mb-2" style={{ color: "var(--color-foreground)" }}>Supprimer la transaction ?</h3>
+            <p className="text-sm mb-6" style={{ color: "var(--color-muted-foreground)" }}>Cette action est irréversible.</p>
+            <div className="flex gap-3">
+              <Button variant="destructive" onClick={handleDeleteTransaction} className="flex-1">Supprimer</Button>
+              <Button variant="outline" onClick={() => setConfirmDeleteId(null)} className="flex-1">Annuler</Button>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { parseObjective, formatObjective, calculateProgress, calculateStock } from "../../utils/objectiveParser";
+import { parseObjective, formatObjective, calculateProgress } from "../../utils/objectiveParser";
 import { toastError, toastSuccess, toastLoading } from "../../utils/toast";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -10,6 +10,7 @@ import Button from "../../components/ui/Button";
 
 export default function ProductionManagement() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [productionData, setProductionData] = useState([]);
   const [exitData, setExitData] = useState([]); // Nouveau: suivi des sorties
   const [stockData, setStockData] = useState([]);
@@ -18,20 +19,18 @@ export default function ProductionManagement() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [showObjectivesModal, setShowObjectivesModal] = useState(false);
   const [objectives, setObjectives] = useState({
-    dimensions: {
-      'Minerai': {daily: {value: 300, unit: 'tonne'}},
-      'Forage': {daily: {value: 150, unit: 'tonne'}},
-      '0/4': {daily: {value: 200, unit: 'tonne'}},
-      '0/5': {daily: {value: 180, unit: 'tonne'}},
-      '0/6': {daily: {value: 160, unit: 'tonne'}},
-      '5/15': {daily: {value: 140, unit: 'tonne'}},
-      '8/15': {daily: {value: 120, unit: 'tonne'}},
-      '15/25': {daily: {value: 100, unit: 'tonne'}},
-      '4/6': {daily: {value: 90, unit: 'tonne'}},
-      '10/14': {daily: {value: 80, unit: 'tonne'}},
-      '6/10': {daily: {value: 70, unit: 'tonne'}},
-      '0/31,5': {daily: {value: 60, unit: 'tonne'}}
-    }
+    'Minerai': 300,
+    'Forage': 150,
+    '0/4': 200,
+    '0/5': 180,
+    '0/6': 160,
+    '5/15': 140,
+    '8/15': 120,
+    '15/25': 100,
+    '4/6': 90,
+    '10/14': 80,
+    '6/10': 70,
+    '0/31,5': 60,
   });
 
   // Liste cohérente des dimensions
@@ -58,14 +57,8 @@ export default function ProductionManagement() {
   });
 
   useEffect(() => {
-    loadProductionData();
+    loadData();
   }, []);
-
-  // Recalculer le stock chaque fois que les données de production ou de sortie changent
-  useEffect(() => {
-    const stockCalculations = calculateStock(productionData, exitData);
-    setStockData(stockCalculations);
-  }, [productionData, exitData]);
 
   const computeProductionTotal = (entry) => {
     if (entry?.total && !isNaN(parseFloat(entry.total))) {
@@ -81,61 +74,41 @@ export default function ProductionManagement() {
     if (!Array.isArray(data)) return [];
     return data.map(entry => ({
       ...entry,
-      dimensions: Array.isArray(entry.dimensions) ? entry.dimensions : [],
+      // Supabase retourne production_details, on le mappe vers dimensions
+      dimensions: entry.production_details || entry.dimensions || [],
       total: computeProductionTotal(entry),
     }));
   };
 
-  const loadProductionData = async () => {
+  const normalizeExitData = (data) => {
+    if (!Array.isArray(data)) return [];
+    return data.map(exit => ({
+      ...exit,
+      // Supabase retourne production_exit_details, on le mappe vers dimensions
+      dimensions: exit.production_exit_details || exit.dimensions || [],
+    }));
+  };
+
+  const loadData = async () => {
     try {
       setLoading(true);
-      
-      // Utiliser uniquement localStorage pour éviter les erreurs de connexion
-      console.log('Production: Using localStorage fallback only');
-      
-      const storedDataRaw = localStorage.getItem('production_fallback') || '[]';
-      const storedData = JSON.parse(storedDataRaw);
-      
-      if (!Array.isArray(storedData) || storedData.length === 0) {
-        // Données initiales si localStorage vide
-        const initialData = [
-          {
-            id: '1',
-            date: '2026-03-15',
-            site: 'Site Principal',
-            shift: 'Jour',
-            operator: 'JD',
-            notes: 'Production normale',
-            dimensions: [
-              { dimension: 'Minerai', quantity: 280 },
-              { dimension: 'Forage', quantity: 145 },
-              { dimension: '0/4', quantity: 195 },
-              { dimension: '0/5', quantity: 175 }
-            ]
-          },
-          {
-            id: '2',
-            date: '2026-03-14',
-            site: 'Site Principal',
-            shift: 'Jour',
-            operator: 'JD',
-            notes: 'Production matin',
-            dimensions: [
-              { dimension: 'Minerai', quantity: 320 },
-              { dimension: 'Forage', quantity: 160 },
-              { dimension: '0/4', quantity: 210 },
-              { dimension: '0/5', quantity: 190 }
-            ]
-          }
-        ];
-        localStorage.setItem('production_fallback', JSON.stringify(initialData));
-        setProductionData(normalizeProductionData(initialData));
-      } else {
-        setProductionData(normalizeProductionData(storedData));
-      }
-      
+
+      const [productionResult, exitsResult, stockResult] = await Promise.all([
+        miningService.getProductionData(),
+        miningService.getProductionExits(),
+        miningService.getStockSummary()
+      ]);
+
+      if (productionResult.error) throw productionResult.error;
+      if (exitsResult.error) throw exitsResult.error;
+
+      setProductionData(normalizeProductionData(productionResult.data || []));
+      setExitData(normalizeExitData(exitsResult.data || []));
+      // Stock unifié : production + entrées manuelles - toutes les sorties
+      setStockData(stockResult.data || []);
+
     } catch (err) {
-      console.error('Erreur:', err);
+      console.error('Erreur chargement production:', err);
       toastError('Erreur de chargement des données');
     } finally {
       setLoading(false);
@@ -143,11 +116,6 @@ export default function ProductionManagement() {
   };
 
 
-  const loadStockData = async () => {
-    // Calculer le stock en fonction des données de production et de sortie
-    const stockCalculations = calculateStock(productionData, exitData);
-    setStockData(stockCalculations);
-  };
 
   const handleAddProduction = async () => {
     try {
@@ -166,8 +134,7 @@ export default function ProductionManagement() {
         sum + (parseFloat(dim.quantity) || 0), 0
       );
 
-      const entryToAdd = {
-        id: Date.now().toString(),
+      const entryToSave = {
         date: newEntry.date,
         site: newEntry.site,
         shift: newEntry.shift,
@@ -180,23 +147,12 @@ export default function ProductionManagement() {
         notes: newEntry.notes
       };
 
-      // Utiliser uniquement localStorage - plus d'appels Supabase
-      console.log('Production: Adding to localStorage only');
-      const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
-      productions.push(entryToAdd);
-      localStorage.setItem('production_fallback', JSON.stringify(productions));
-      
-      // Mettre à jour l'état local
-      const updatedProduction = [...productionData, entryToAdd];
-      setProductionData(updatedProduction);
-      
-      // Mettre à jour le stock de manière cumulative
-      const stockCalculations = calculateStock(updatedProduction, exitData);
-      setStockData(stockCalculations);
-      
+      const result = await miningService.addProductionData(entryToSave);
+      if (result.error) throw result.error;
+
       toastSuccess(`Production enregistrée: ${total} tonnes`);
-      
-      // Réinitialiser le formulaire
+      await loadData();
+
       setNewEntry({
         date: new Date().toISOString().split('T')[0],
         site: 'Site Principal',
@@ -205,7 +161,7 @@ export default function ProductionManagement() {
         notes: '',
         dimensions: DIMENSIONS_LIST.map(dim => ({ dimension: dim, quantity: 0 }))
       });
-      
+
       setShowAddModal(false);
       
     } catch (error) {
@@ -217,22 +173,24 @@ export default function ProductionManagement() {
   const handleAddExit = async () => {
     try {
       if (!newExit.date || !newExit.destination) {
-        alert('Veuillez remplir les champs obligatoires');
+        toastError('Veuillez remplir les champs obligatoires');
         return;
       }
 
       const hasQuantities = newExit.dimensions.some(dim => dim.quantity && parseFloat(dim.quantity) > 0);
       if (!hasQuantities) {
-        alert('Veuillez saisir au moins une quantité');
+        toastError('Veuillez saisir au moins une quantité');
         return;
       }
 
-      // Vérification du stock disponible
+      // Vérification stricte du stock disponible par dimension
       for (const dim of newExit.dimensions) {
-        if (dim.quantity && parseFloat(dim.quantity) > 0) {
+        const qty = parseFloat(dim.quantity);
+        if (qty > 0) {
           const stockDim = stockData.find(s => s.dimension === dim.dimension);
-          if (stockDim && parseFloat(dim.quantity) > stockDim.available) {
-            alert(`Stock insuffisant pour la dimension ${dim.dimension}. Disponible: ${stockDim.available} tonnes`);
+          const available = stockDim ? stockDim.available : 0;
+          if (qty > available) {
+            toastError(`Stock insuffisant pour "${dim.dimension}". Disponible: ${available.toFixed(1)} t — Demandé: ${qty.toFixed(1)} t`);
             return;
           }
         }
@@ -243,8 +201,7 @@ export default function ProductionManagement() {
       );
 
       // Créer l'entrée de sortie
-      const exitToAdd = {
-        id: Date.now(),
+      const exitToSave = {
         date: newExit.date,
         destination: newExit.destination,
         exit_type: newExit.exit_type,
@@ -257,15 +214,12 @@ export default function ProductionManagement() {
         total: total
       };
 
-      // Enregistrer la sortie dans exitData
-      const updatedExits = [...exitData, exitToAdd];
-      setExitData(updatedExits);
-      
-      // Recalculer le stock de manière cumulative
-      const stockCalculations = calculateStock(productionData, updatedExits);
-      setStockData(stockCalculations);
-      
-      // Réinitialiser le formulaire
+      const result = await miningService.addProductionExit(exitToSave);
+      if (result.error) throw result.error;
+
+      toastSuccess(`Sortie enregistrée: ${total} tonnes`);
+      await loadData();
+
       setNewExit({
         date: '',
         destination: '',
@@ -274,13 +228,12 @@ export default function ProductionManagement() {
         client_name: '',
         notes: ''
       });
-      
+
       setShowExitModal(false);
-      alert(`Sortie de stock enregistrée: ${total} tonnes`);
-      
+
     } catch (error) {
       console.error("Erreur ajout sortie:", error);
-      alert("Erreur lors de l'enregistrement de la sortie");
+      toastError("Erreur lors de l'enregistrement de la sortie");
     }
   };
 
@@ -289,7 +242,7 @@ export default function ProductionManagement() {
 
   if (loading) {
     return (
-      <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+      <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres">
         <div className="flex items-center justify-center h-64">
           <p style={{ color: "var(--color-muted-foreground)" }}>Chargement...</p>
         </div>
@@ -298,7 +251,7 @@ export default function ProductionManagement() {
   }
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -380,7 +333,7 @@ export default function ProductionManagement() {
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Saisies Aujourd'hui</p>
               <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>
-                {productionData.filter(p => p.date === '2026-03-05').length}
+                {productionData.filter(p => p.date === new Date().toISOString().split('T')[0]).length}
               </p>
             </div>
           </div>
@@ -576,35 +529,68 @@ export default function ProductionManagement() {
                 </div>
               </div>
               
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
-                  Production par dimension (tonnes)
-                </label>
-                <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
-                  {newEntry.dimensions.map((dim, index) => (
-                    <div key={index}>
-                      <label className="block text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
-                        {dim.dimension}
-                      </label>
+              {/* Minerai et Forage — champs principaux au-dessus */}
+              <div className="grid grid-cols-2 gap-4 p-3 rounded-lg" style={{ background: "var(--color-muted)" }}>
+                {['Minerai', 'Forage'].map(dimName => {
+                  const index = newEntry.dimensions.findIndex(d => d.dimension === dimName);
+                  const dim = newEntry.dimensions[index];
+                  const stockDim = stockData.find(s => s.dimension === dimName);
+                  const available = stockDim ? stockDim.available : 0;
+                  return (
+                    <div key={dimName}>
+                      <label className="block text-sm font-semibold mb-0.5" style={{ color: "var(--color-foreground)" }}>{dimName}</label>
+                      <p className="text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
+                        Nombre: <span style={{ fontWeight: 600, color: available > 0 ? "var(--color-success)" : "var(--color-muted-foreground)" }}>{available.toFixed(1)} t</span>
+                      </p>
                       <input
-                        type="number"
-                        step="0.1"
-                        value={dim.quantity}
+                        type="number" step="0.1" min="0"
+                        value={dim?.quantity ?? 0}
                         onChange={(e) => {
                           const updatedDims = [...newEntry.dimensions];
                           updatedDims[index].quantity = e.target.value;
                           setNewEntry({...newEntry, dimensions: updatedDims});
                         }}
-                        className="w-full p-2 rounded border"
-                        style={{ 
-                          borderColor: "var(--color-border)",
-                          background: "var(--color-background)",
-                          color: "var(--color-foreground)"
-                        }}
+                        className="w-full p-2 rounded border font-bold"
+                        style={{ borderColor: "var(--color-primary)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                         placeholder="0.0"
                       />
                     </div>
-                  ))}
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
+                  Production par dimension (tonnes)
+                </label>
+                <div className="grid grid-cols-3 gap-4 max-h-64 overflow-y-auto pr-2">
+                  {newEntry.dimensions.filter(dim => dim.dimension !== 'Minerai' && dim.dimension !== 'Forage').map((dim, _) => {
+                    const index = newEntry.dimensions.findIndex(d => d.dimension === dim.dimension);
+                    const stockDim = stockData.find(s => s.dimension === dim.dimension);
+                    const available = stockDim ? stockDim.available : 0;
+                    return (
+                      <div key={dim.dimension}>
+                        <label className="block text-xs mb-0.5 font-medium" style={{ color: "var(--color-foreground)" }}>
+                          {dim.dimension}
+                        </label>
+                        <p className="text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
+                          Stock: <span style={{ fontWeight: 600, color: available > 0 ? "var(--color-success)" : "var(--color-muted-foreground)" }}>{available.toFixed(1)} t</span>
+                        </p>
+                        <input
+                          type="number" step="0.1" min="0"
+                          value={dim.quantity}
+                          onChange={(e) => {
+                            const updatedDims = [...newEntry.dimensions];
+                            updatedDims[index].quantity = e.target.value;
+                            setNewEntry({...newEntry, dimensions: updatedDims});
+                          }}
+                          className="w-full p-2 rounded border"
+                          style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                          placeholder="0.0"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               
@@ -735,15 +721,20 @@ export default function ProductionManagement() {
                 <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
                   {newExit.dimensions.map((dim, index) => {
                     const stockDim = stockData.find(s => s.dimension === dim.dimension);
+                    const available = stockDim ? stockDim.available : 0;
+                    const requested = parseFloat(dim.quantity) || 0;
+                    const isOverstock = requested > available;
                     return (
                       <div key={index}>
-                        <label className="block text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
-                          {dim.dimension} (Disponible: {stockDim?.available.toFixed(1) || 0} t)
+                        <label className="block text-xs mb-1" style={{ color: isOverstock ? "var(--color-error)" : "var(--color-muted-foreground)", fontWeight: isOverstock ? 600 : 400 }}>
+                          {dim.dimension} — Disponible: <span style={{ fontWeight: 700 }}>{available.toFixed(1)} t</span>
+                          {isOverstock && <span style={{ color: "var(--color-error)" }}> ⚠ Dépassement</span>}
                         </label>
                         <input
                           type="number"
                           step="0.1"
-                          max={stockDim?.available || 0}
+                          min="0"
+                          max={available}
                           value={dim.quantity}
                           onChange={(e) => {
                             const updatedDims = [...newExit.dimensions];
@@ -751,9 +742,9 @@ export default function ProductionManagement() {
                             setNewExit({...newExit, dimensions: updatedDims});
                           }}
                           className="w-full p-2 rounded border"
-                          style={{ 
-                            borderColor: "var(--color-border)",
-                            background: "var(--color-background)",
+                          style={{
+                            borderColor: isOverstock ? "var(--color-error)" : "var(--color-border)",
+                            background: isOverstock ? "rgba(229,62,62,0.06)" : "var(--color-background)",
                             color: "var(--color-foreground)"
                           }}
                           placeholder="0.0"
@@ -792,6 +783,11 @@ export default function ProductionManagement() {
               <Button
                 variant="default"
                 onClick={handleAddExit}
+                disabled={newExit.dimensions.some(dim => {
+                  const stockDim = stockData.find(s => s.dimension === dim.dimension);
+                  const available = stockDim ? stockDim.available : 0;
+                  return (parseFloat(dim.quantity) || 0) > available;
+                })}
               >
                 Enregistrer la Sortie
               </Button>
@@ -807,29 +803,39 @@ export default function ProductionManagement() {
             <h3 className="text-lg font-semibold mb-4 sticky top-0 pb-4 border-b" style={{ color: "var(--color-foreground)", borderColor: "var(--color-border)" }}>
               Objectifs de Production par Dimension
             </h3>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {DIMENSIONS_LIST.map(dimension => (
-                <div key={dimension}>
-                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    {dimension} (tonnes/jour)
+            {/* Minerai et Forage en haut — champs principaux */}
+            <div className="grid grid-cols-2 gap-4 mb-5 p-4 rounded-lg" style={{ background: "var(--color-muted)" }}>
+              {['Minerai', 'Forage'].map(dim => (
+                <div key={dim}>
+                  <label className="block text-sm font-semibold mb-1" style={{ color: "var(--color-foreground)" }}>
+                    {dim} (t/jour)
                   </label>
                   <input
                     type="number"
-                    value={objectives.dimensions[dimension]?.daily?.value || 0}
-                    onChange={(e) => {
-                      const newObjectives = {...objectives};
-                      if (!newObjectives.dimensions[dimension]) {
-                        newObjectives.dimensions[dimension] = {daily: {value: 0, unit: 'tonne'}};
-                      }
-                      newObjectives.dimensions[dimension].daily.value = parseFloat(e.target.value) || 0;
-                      setObjectives(newObjectives);
-                    }}
+                    value={objectives[dim] ?? 0}
+                    onChange={(e) => setObjectives({ ...objectives, [dim]: parseFloat(e.target.value) || 0 })}
+                    className="w-full p-2 rounded border text-base font-bold"
+                    style={{ borderColor: "var(--color-primary)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Autres dimensions */}
+            <p className="text-xs font-medium mb-2" style={{ color: "var(--color-muted-foreground)" }}>AUTRES DIMENSIONS</p>
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {DIMENSIONS_LIST.filter(d => d !== 'Minerai' && d !== 'Forage').map(dimension => (
+                <div key={dimension}>
+                  <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
+                    {dimension} (t/jour)
+                  </label>
+                  <input
+                    type="number"
+                    value={objectives[dimension] ?? 0}
+                    onChange={(e) => setObjectives({ ...objectives, [dimension]: parseFloat(e.target.value) || 0 })}
                     className="w-full p-2 rounded border"
-                    style={{
-                      borderColor: "var(--color-border)",
-                      background: "var(--color-background)",
-                      color: "var(--color-foreground)"
-                    }}
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                     placeholder="0"
                   />
                 </div>
@@ -845,7 +851,7 @@ export default function ProductionManagement() {
               <Button
                 variant="default"
                 onClick={() => {
-                  alert("Objectifs sauvegardés avec succès !");
+                  toastSuccess("Objectifs sauvegardés");
                   setShowObjectivesModal(false);
                 }}
               >

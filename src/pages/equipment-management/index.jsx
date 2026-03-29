@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
-import { useAuth } from "../..//context/AuthContext";
+import { useAuth } from "../../context/AuthContext";
 import { miningService } from "../../config/supabase";
+import { toastError, toastSuccess } from "../../utils/toast";
 
 export default function EquipmentManagement() {
   const navigate = useNavigate();
@@ -22,22 +23,27 @@ export default function EquipmentManagement() {
     model: '',
     serial_number: '',
     location: '',
-    capacity: ''
+    status: 'active'
   });
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editEquipment, setEditEquipment] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // Nouveau: État pour le suivi quotidien des opérations
   const [newOperation, setNewOperation] = useState({
     date: new Date().toISOString().split('T')[0],
     equipment_id: '',
+    code_agent: '',
     shift: 'jour',
     machine_type: '',
-    status: 'functional', // 'functional' ou 'panne'
+    status: 'functional',
     breakdown_time: '',
-    repair_status: '', // 'en_reparation' ou 'hors_service'
+    repair_status: '',
     resume_time: '',
     counter_start: '',
     counter_end: '',
-    distance: ''
+    distance: '',
+    operator: ''
   });
 
   useEffect(() => {
@@ -52,237 +58,117 @@ export default function EquipmentManagement() {
       const { data, error } = await miningService.getEquipment(user?.role);
       if (error) throw error;
       if (data) {
+        // Filtrer les équipements retraités (soft-deleted)
         setEquipment(data);
       } else {
         setEquipment([]);
       }
     } catch (error) {
       console.error("Erreur chargement équipements:", error);
-      // pour la démo on conserve des données mock si l'API ne répond pas
-      setEquipment([
-        {
-          id: 1,
-          name: "Excavateur CAT 349",
-          type: "excavator",
-          machine_type: "Pelle hydraulique",
-          model: "CAT 349F",
-          serial_number: "EXC001",
-          location: "Site A",
-          status: "active",
-          capacity: 50.5,
-          purchase_date: "2023-01-15",
-          last_maintenance: "2026-02-20",
-          next_maintenance: "2026-03-20"
-        },
-        {
-          id: 2,
-          name: "Percatrice Atlas Copco",
-          type: "drill",
-          machine_type: "Foruse",
-          model: "ROC L8",
-          serial_number: "DRILL001",
-          location: "Site A",
-          status: "active",
-          capacity: 25.0,
-          purchase_date: "2023-03-10",
-          last_maintenance: "2026-02-15",
-          next_maintenance: "2026-03-15"
-        },
-        {
-          id: 3,
-          name: "Convoyeur Principal",
-          type: "conveyor",
-          machine_type: "Convoyeur",
-          model: "CV-1000",
-          serial_number: "CV001",
-          location: "Site B",
-          status: "maintenance",
-          capacity: 100.0,
-          purchase_date: "2022-11-20",
-          last_maintenance: "2026-03-01",
-          next_maintenance: "2026-03-10"
-        },
-        {
-          id: 4,
-          name: "Concasseur Metso",
-          type: "crusher",
-          machine_type: "Concasseur",
-          model: "Nordberg C200",
-          serial_number: "CRUSH001",
-          location: "Site B",
-          status: "active",
-          capacity: 75.0,
-          purchase_date: "2022-09-05",
-          last_maintenance: "2026-02-25",
-          next_maintenance: "2026-03-25"
-        },
-        {
-          id: 5,
-          name: "Camion Benne Volvo A40",
-          type: "truck",
-          machine_type: "Camion benne",
-          model: "A40G",
-          serial_number: "TRUCK001",
-          location: "Site A",
-          status: "active",
-          capacity: 41.0,
-          purchase_date: "2023-06-15",
-          last_maintenance: "2026-02-28",
-          next_maintenance: "2026-03-28"
-        },
-        {
-          id: 6,
-          name: "Chargeuse CAT 950M",
-          type: "loader",
-          machine_type: "Chargeuse",
-          model: "950M",
-          serial_number: "LOAD001",
-          location: "Site A",
-          status: "active",
-          capacity: 9.5,
-          purchase_date: "2023-04-20",
-          last_maintenance: "2026-03-05",
-          next_maintenance: "2026-04-05"
-        }
-      ]);
+      setEquipment([]);
     } finally {
       setLoading(false);
     }
   };
 
   const loadOperationLogs = async () => {
-    // Données de démonstration pour les journaux d'opérations
-    const mockLogs = [
-      {
-        id: 1,
-        date: '2026-03-10',
-        equipment_id: 1,
-        equipment_name: "Excavateur CAT 349",
-        shift: 'jour',
-        machine_type: "Pelle hydraulique",
-        status: 'functional',
-        breakdown_time: null,
-        repair_status: null,
-        resume_time: null,
-        counter_start: 12500,
-        counter_end: 12550,
-        distance: 0,
-        operator: 'Jean Dupont'
-      },
-      {
-        id: 2,
-        date: '2026-03-10',
-        equipment_id: 5,
-        equipment_name: "Camion Benne Volvo A40",
-        shift: 'jour',
-        machine_type: "Camion benne",
-        status: 'panne',
-        breakdown_time: '10:30',
-        repair_status: 'en_reparation',
-        resume_time: '14:00',
-        counter_start: 8500,
-        counter_end: 8650,
-        distance: 150,
-        operator: 'Marie Martin'
-      },
-      {
-        id: 3,
-        date: '2026-03-09',
-        equipment_id: 2,
-        equipment_name: "Percatrice Atlas Copco",
-        shift: 'nuit',
-        machine_type: "Foruse",
-        status: 'functional',
-        breakdown_time: null,
-        repair_status: null,
-        resume_time: null,
-        counter_start: 5600,
-        counter_end: 5650,
-        distance: 0,
-        operator: 'Pierre Durand'
-      }
-    ];
-    setOperationLogs(mockLogs);
+    try {
+      const { data, error } = await miningService.getOperationLogs();
+      if (error) throw error;
+      setOperationLogs(data || []);
+    } catch (error) {
+      console.error("Erreur chargement journaux opérations:", error);
+      setOperationLogs([]);
+    }
   };
 
   const handleAddEquipment = async () => {
-    try {
-      if (!newEquipment.name || !newEquipment.type || !newEquipment.model) {
-        alert('Veuillez remplir les champs obligatoires');
-        return;
-      }
+    if (!newEquipment.name || !newEquipment.type || !newEquipment.model) {
+      toastError('Veuillez remplir les champs obligatoires (Code Engin, Type, Modèle)');
+      return;
+    }
 
+    try {
       const equipmentToAdd = {
-        id: Date.now(),
         name: newEquipment.name,
         type: newEquipment.type,
-        machine_type: newEquipment.type,
         model: newEquipment.model,
-        serial_number: newEquipment.serial_number || `EQ${Date.now()}`,
-        location: newEquipment.location || 'Site A',
-        status: 'active',
-        capacity: parseFloat(newEquipment.capacity) || 0,
+        serial_number: newEquipment.serial_number || `EQ-${Date.now()}`,
+        status: newEquipment.status || 'active',
         purchase_date: new Date().toISOString().split('T')[0],
-        last_maintenance: null,
-        next_maintenance: null
+        location: newEquipment.location || null,
       };
-      setEquipment([...equipment, equipmentToAdd]);
+      const { error } = await miningService.createEquipment(equipmentToAdd);
+      if (error) throw error;
+      await fetchEquipmentData();
       setShowAddModal(false);
-      setNewEquipment({
-        name: '',
-        type: '',
-        model: '',
-        serial_number: '',
-        location: '',
-        capacity: ''
-      });
+      setNewEquipment({ name: '', type: '', model: '', serial_number: '', location: '', status: 'active' });
+      toastSuccess('Équipement ajouté avec succès');
     } catch (error) {
       console.error("Erreur ajout équipement:", error);
+      toastError(`Erreur lors de l'ajout: ${error.message || 'Vérifiez vos permissions'}`);
     }
   };
 
   // Nouvelle fonction pour ajouter une opération quotidienne
   const handleAddOperation = async () => {
     try {
-      if (!newOperation.equipment_id || !newOperation.date) {
-        alert('Veuillez sélectionner un équipement et une date');
+      if (!newOperation.date) {
+        toastError('Veuillez renseigner une date');
+        return;
+      }
+      if (!newOperation.equipment_id && !newOperation.code_agent) {
+        toastError('Veuillez sélectionner un équipement ou saisir un Code Engin');
         return;
       }
 
-      const selectedEquipment = equipment.find(e => e.id === parseInt(newOperation.equipment_id));
-      
+      let equipmentId = newOperation.equipment_id;
+
+      // Si code_agent saisi sans sélection dropdown → créer ou retrouver l'équipement
+      if (!equipmentId && newOperation.code_agent) {
+        const existing = equipment.find(e => e.name.toLowerCase() === newOperation.code_agent.toLowerCase());
+        if (existing) {
+          equipmentId = existing.id;
+        } else {
+          const { data: created, error: createErr } = await miningService.createEquipment({
+            name: newOperation.code_agent,
+            type: newOperation.machine_type || 'Autre',
+            model: '-',
+            serial_number: `EQ-${Date.now()}`,
+            status: 'active',
+            purchase_date: new Date().toISOString().split('T')[0],
+          });
+          if (createErr) throw createErr;
+          equipmentId = created.id;
+          await fetchEquipmentData();
+        }
+      }
+
+      const selectedEquipment = equipment.find(e => e.id === equipmentId);
+
       const operationToAdd = {
-        id: Date.now(),
         date: newOperation.date,
-        equipment_id: parseInt(newOperation.equipment_id),
-        equipment_name: selectedEquipment?.name || '',
+        equipment_id: equipmentId,
         shift: newOperation.shift,
-        machine_type: newOperation.machine_type || selectedEquipment?.machine_type || '',
-        status: newOperation.status,
-        breakdown_time: newOperation.breakdown_time || null,
-        repair_status: newOperation.repair_status || null,
-        resume_time: newOperation.resume_time || null,
+        machine_type: newOperation.machine_type || selectedEquipment?.type || '',
+        status: 'functional',
         counter_start: parseFloat(newOperation.counter_start) || 0,
         counter_end: parseFloat(newOperation.counter_end) || 0,
         distance: parseFloat(newOperation.distance) || 0,
-        operator: newOperation.operator || 'Non spécifié'
+        operator_name: newOperation.operator || null,
+        created_by: user?.id || null
       };
 
-      setOperationLogs([operationToAdd, ...operationLogs]);
-      
-      // Mettre à jour le statut de l'équipement si nécessaire
-      if (newOperation.status === 'panne') {
-        setEquipment(equipment.map(e => 
-          e.id === parseInt(newOperation.equipment_id) 
-            ? { ...e, status: 'offline' }
-            : e
-        ));
-      }
+      const { error } = await miningService.addOperationLog(operationToAdd);
+      if (error) throw error;
 
+      await loadOperationLogs();
+      await fetchEquipmentData();
       setShowOperationModal(false);
       setNewOperation({
         date: new Date().toISOString().split('T')[0],
         equipment_id: '',
+        code_agent: '',
         shift: 'jour',
         machine_type: '',
         status: 'functional',
@@ -295,20 +181,44 @@ export default function EquipmentManagement() {
         operator: ''
       });
       
-      alert('Opération enregistrée avec succès!');
+      toastSuccess('Opération enregistrée avec succès!');
     } catch (error) {
       console.error("Erreur ajout opération:", error);
+      toastError(`Erreur lors de l'enregistrement: ${error.message || 'Vérifiez vos permissions'}`);
     }
   };
 
-  const handleDeleteEquipment = async (equipmentId) => {
+  const handleDeleteEquipment = async () => {
+    if (!confirmDeleteId) return;
     try {
-      if (window.confirm("Êtes-vous sûr de vouloir supprimer cet équipement ?")) {
-        setEquipment(equipment.filter(e => e.id !== equipmentId));
-      }
+      const { error } = await miningService.deleteEquipment(confirmDeleteId);
+      if (error) throw error;
+      toastSuccess('Équipement supprimé');
+      setConfirmDeleteId(null);
+      await fetchEquipmentData();
     } catch (error) {
-      console.error("Erreur suppression équipement:", error);
+      toastError('Erreur suppression: ' + error.message);
+      setConfirmDeleteId(null);
     }
+  };
+
+  const handleEditStatus = async () => {
+    try {
+      const { error } = await miningService.updateEquipment(editEquipment.id, {
+        status: editEquipment.status
+      });
+      if (error) throw error;
+      await fetchEquipmentData();
+      setShowEditModal(false);
+      toastSuccess('Équipement mis à jour');
+    } catch (error) {
+      toastError('Erreur mise à jour: ' + error.message);
+    }
+  };
+
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '-';
+    return timeStr.replace(':', 'h');
   };
 
   const getStatusColor = (status) => {
@@ -360,7 +270,7 @@ export default function EquipmentManagement() {
   };
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -390,7 +300,8 @@ export default function EquipmentManagement() {
           >
             Actualiser les données
           </Button>
-          <Button
+         {/*
+<Button
             variant="outline"
             iconName="Clipboard"
             iconPosition="left"
@@ -398,6 +309,9 @@ export default function EquipmentManagement() {
           >
             Saisie Quotidienne
           </Button>
+            */
+         }
+          
           <Button
             variant="outline"
             iconName="ArrowLeft"
@@ -502,11 +416,10 @@ export default function EquipmentManagement() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b" style={{ borderColor: "var(--color-border)" }}>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Nom</th>
+                    <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Code Engin</th>
                     <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Type</th>
                     <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Modèle</th>
                     <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Localisation</th>
-                    <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Capacité</th>
                     <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Statut</th>
                     <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Actions</th>
                   </tr>
@@ -514,13 +427,13 @@ export default function EquipmentManagement() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
+                      <td colSpan="6" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                         Chargement...
                       </td>
                     </tr>
                   ) : equipment.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
+                      <td colSpan="6" className="p-8 text-center" style={{ color: "var(--color-muted-foreground)" }}>
                         Aucun équipement trouvé
                       </td>
                     </tr>
@@ -535,11 +448,10 @@ export default function EquipmentManagement() {
                         </td>
                         <td className="p-4" style={{ color: "var(--color-foreground)" }}>{getMachineTypeLabel(item.type)}</td>
                         <td className="p-4" style={{ color: "var(--color-foreground)" }}>{item.model}</td>
-                        <td className="p-4" style={{ color: "var(--color-foreground)" }}>{item.location}</td>
-                        <td className="p-4" style={{ color: "var(--color-foreground)" }}>{item.capacity} t/h</td>
+                        <td className="p-4" style={{ color: "var(--color-muted-foreground)" }}>{item.location || '—'}</td>
                         <td className="p-4">
-                          <span className="px-2 py-1 rounded-full text-xs font-medium" 
-                            style={{ 
+                          <span className="px-2 py-1 rounded-full text-xs font-medium"
+                            style={{
                               background: `${getStatusColor(item.status)}15`,
                               color: getStatusColor(item.status)
                             }}>
@@ -548,14 +460,24 @@ export default function EquipmentManagement() {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" iconName="Edit" />
-                            <Button variant="ghost" size="sm" iconName="Settings" />
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              iconName="Trash2" 
-                              onClick={() => handleDeleteEquipment(item.id)}
-                            />
+                            <button
+                              onClick={() => { setEditEquipment({ ...item }); setShowEditModal(true); }}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-muted"
+                              style={{ color: "var(--color-primary)" }}
+                              title="Modifier le statut"
+                            >
+                              <Icon name="Edit" size={13} color="var(--color-primary)" />
+                              Modifier
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(item.id)}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-muted"
+                              style={{ color: "var(--color-error)" }}
+                              title="Supprimer"
+                            >
+                              <Icon name="Trash2" size={13} color="var(--color-error)" />
+                              Suppr.
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -662,7 +584,7 @@ export default function EquipmentManagement() {
                             {log.shift === 'jour' ? 'Jour' : 'Nuit'}
                           </span>
                         </td>
-                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.equipment_name}</td>
+                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.equipment?.name || '—'}</td>
                         <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.machine_type}</td>
                         <td className="p-3 text-sm">
                           <span className="px-2 py-1 rounded-full text-xs font-medium" 
@@ -673,7 +595,7 @@ export default function EquipmentManagement() {
                             {getStatusText(log.status)}
                           </span>
                         </td>
-                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.breakdown_time || '-'}</td>
+                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{formatTime(log.breakdown_time)}</td>
                         <td className="p-3 text-sm">
                           {log.repair_status ? (
                             <span className="px-2 py-1 rounded-full text-xs font-medium" 
@@ -685,7 +607,7 @@ export default function EquipmentManagement() {
                             </span>
                           ) : '-'}
                         </td>
-                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.resume_time || '-'}</td>
+                        <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{formatTime(log.resume_time)}</td>
                         <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.counter_start.toLocaleString()}</td>
                         <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.counter_end.toLocaleString()}</td>
                         <td className="p-3 text-sm" style={{ color: "var(--color-foreground)" }}>{log.distance} km</td>
@@ -707,68 +629,144 @@ export default function EquipmentManagement() {
               Ajouter un équipement
             </h3>
             <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Nom de l'équipement *"
-                value={newEquipment.name}
-                onChange={(e) => setNewEquipment({...newEquipment, name: e.target.value})}
-                className="w-full p-2 rounded border"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-              />
-              <select 
-                className="w-full p-2 rounded border" 
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                value={newEquipment.type}
-                onChange={(e) => setNewEquipment({...newEquipment, type: e.target.value})}
-              >
-                <option value="">Type...</option>
-                <option value="excavator">Pelle hydraulique</option>
-                <option value="drill">Foruse</option>
-                <option value="conveyor">Convoyeur</option>
-                <option value="crusher">Concasseur</option>
-                <option value="truck">Camion benne</option>
-                <option value="loader">Chargeuse</option>
-              </select>
-              <input
-                type="text"
-                placeholder="Modèle *"
-                value={newEquipment.model}
-                onChange={(e) => setNewEquipment({...newEquipment, model: e.target.value})}
-                className="w-full p-2 rounded border"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-              />
-              <input
-                type="text"
-                placeholder="Numéro de série"
-                value={newEquipment.serial_number}
-                onChange={(e) => setNewEquipment({...newEquipment, serial_number: e.target.value})}
-                className="w-full p-2 rounded border"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-              />
-              <input
-                type="text"
-                placeholder="Localisation"
-                value={newEquipment.location}
-                onChange={(e) => setNewEquipment({...newEquipment, location: e.target.value})}
-                className="w-full p-2 rounded border"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-              />
-              <input
-                type="number"
-                placeholder="Capacité (tonnes/heure)"
-                value={newEquipment.capacity}
-                onChange={(e) => setNewEquipment({...newEquipment, capacity: e.target.value})}
-                className="w-full p-2 rounded border"
-                style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-              />
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setShowAddModal(false)}>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Code Engin *</label>
+                <input
+                  type="text"
+                  placeholder="ex: CAT-001"
+                  value={newEquipment.name}
+                  onChange={(e) => setNewEquipment({...newEquipment, name: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Type *</label>
+                <select
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                  value={newEquipment.type}
+                  onChange={(e) => setNewEquipment({...newEquipment, type: e.target.value})}
+                >
+                  <option value="">Sélectionner un type...</option>
+                  <option value="excavator">Pelle hydraulique</option>
+                  <option value="drill">Foreuse</option>
+                  <option value="conveyor">Convoyeur</option>
+                  <option value="crusher">Concasseur</option>
+                  <option value="truck">Camion benne</option>
+                  <option value="loader">Chargeuse</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Modèle *</label>
+                <input
+                  type="text"
+                  placeholder="ex: Caterpillar 390F"
+                  value={newEquipment.model}
+                  onChange={(e) => setNewEquipment({...newEquipment, model: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Numéro de série</label>
+                <input
+                  type="text"
+                  placeholder="ex: SN-2024-001"
+                  value={newEquipment.serial_number}
+                  onChange={(e) => setNewEquipment({...newEquipment, serial_number: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Localisation</label>
+                <input
+                  type="text"
+                  placeholder="ex: Carrière Nord"
+                  value={newEquipment.location}
+                  onChange={(e) => setNewEquipment({...newEquipment, location: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Statut</label>
+                <select
+                  value={newEquipment.status}
+                  onChange={(e) => setNewEquipment({...newEquipment, status: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                >
+                  <option value="active">Actif</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="offline">Hors service</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" onClick={() => { setShowAddModal(false); setNewEquipment({ name: '', type: '', model: '', serial_number: '', location: '', status: 'active' }); }}>
                   Annuler
                 </Button>
                 <Button variant="default" onClick={handleAddEquipment}>
-                  Ajouter
+                  Ajouter l'équipement
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Modifier Équipement */}
+      {showEditModal && editEquipment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="rounded-xl p-6 w-full max-w-sm" style={{ background: "var(--color-card)" }}>
+            <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>
+              Modifier — {editEquipment.name}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>Statut</label>
+                <select
+                  value={editEquipment.status}
+                  onChange={(e) => setEditEquipment({ ...editEquipment, status: e.target.value })}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                >
+                  <option value="active">Actif</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="offline">Hors service</option>
+                  <option value="retired">Retraité</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" onClick={() => setShowEditModal(false)}>Annuler</Button>
+                <Button variant="default" onClick={handleEditStatus}>Enregistrer</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmation Suppression */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="rounded-xl p-6 w-full max-w-sm" style={{ background: "var(--color-card)" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "rgba(229,62,62,0.12)" }}>
+                <Icon name="AlertTriangle" size={20} color="var(--color-error)" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: "var(--color-foreground)" }}>Supprimer l'équipement ?</h3>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-muted-foreground)" }}>
+                  Cette action est irréversible. Si des données sont liées, l'équipement sera passé en statut "Retraité".
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Annuler</Button>
+              <Button variant="destructive" onClick={handleDeleteEquipment}>
+                Supprimer
+              </Button>
             </div>
           </div>
         </div>
@@ -812,30 +810,40 @@ export default function EquipmentManagement() {
                 </div>
               </div>
 
-              {/* Équipement et Type machine */}
+              {/* Code Engin + Type machine */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                    Équipement *
+                    Code Engin *
                   </label>
-                  <select
-                    value={newOperation.equipment_id}
+                  <input
+                    list="equipment-list"
+                    type="text"
+                    value={newOperation.code_agent || (equipment.find(e => e.id === newOperation.equipment_id)?.name || '')}
                     onChange={(e) => {
-                      const selected = equipment.find(eq => eq.id === parseInt(e.target.value));
+                      const val = e.target.value;
+                      const matched = equipment.find(eq => eq.name.toLowerCase() === val.toLowerCase());
                       setNewOperation({
-                        ...newOperation, 
-                        equipment_id: e.target.value,
-                        machine_type: selected?.machine_type || ''
+                        ...newOperation,
+                        code_agent: val,
+                        equipment_id: matched ? matched.id : '',
+                        machine_type: matched ? (matched.type || newOperation.machine_type) : newOperation.machine_type
                       });
                     }}
                     className="w-full p-2 rounded border"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                  >
-                    <option value="">Sélectionner...</option>
+                    placeholder="Ex: CAM-001"
+                  />
+                  <datalist id="equipment-list">
                     {equipment.map(eq => (
-                      <option key={eq.id} value={eq.id}>{eq.name}</option>
+                      <option key={eq.id} value={eq.name} />
                     ))}
-                  </select>
+                  </datalist>
+                  {newOperation.code_agent && !newOperation.equipment_id && (
+                    <p className="text-xs mt-1" style={{ color: "var(--color-warning)" }}>
+                      Nouvel équipement — sera créé automatiquement
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
@@ -867,83 +875,6 @@ export default function EquipmentManagement() {
                 />
               </div>
 
-              {/* État de l'équipement */}
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
-                  État de l'équipement *
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="functional"
-                      checked={newOperation.status === 'functional'}
-                      onChange={(e) => setNewOperation({...newOperation, status: e.target.value})}
-                    />
-                    <span style={{ color: "var(--color-success)" }}>Fonctionnel</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="status"
-                      value="panne"
-                      checked={newOperation.status === 'panne'}
-                      onChange={(e) => setNewOperation({...newOperation, status: e.target.value})}
-                    />
-                    <span style={{ color: "var(--color-error)" }}>Panne</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Champs de panne (conditionnels) */}
-              {newOperation.status === 'panne' && (
-                <div className="p-4 rounded-lg border" style={{ borderColor: "var(--color-error)", background: "rgba(229,62,62,0.05)" }}>
-                  <h4 className="font-medium mb-3" style={{ color: "var(--color-error)" }}>Informations sur la panne</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                        Heure de panne
-                      </label>
-                      <input
-                        type="time"
-                        value={newOperation.breakdown_time}
-                        onChange={(e) => setNewOperation({...newOperation, breakdown_time: e.target.value})}
-                        className="w-full p-2 rounded border"
-                        style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                        Statut réparation
-                      </label>
-                      <select
-                        value={newOperation.repair_status}
-                        onChange={(e) => setNewOperation({...newOperation, repair_status: e.target.value})}
-                        className="w-full p-2 rounded border"
-                        style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                      >
-                        <option value="">Sélectionner...</option>
-                        <option value="en_reparation">En réparation</option>
-                        <option value="hors_service">Hors service</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
-                        Heure de reprise
-                      </label>
-                      <input
-                        type="time"
-                        value={newOperation.resume_time}
-                        onChange={(e) => setNewOperation({...newOperation, resume_time: e.target.value})}
-                        className="w-full p-2 rounded border"
-                        style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Compteurs et Distance */}
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -966,7 +897,15 @@ export default function EquipmentManagement() {
                   <input
                     type="number"
                     value={newOperation.counter_end}
-                    onChange={(e) => setNewOperation({...newOperation, counter_end: e.target.value})}
+                    onChange={(e) => {
+                      const end = parseFloat(e.target.value) || 0;
+                      const start = parseFloat(newOperation.counter_start) || 0;
+                      setNewOperation({
+                        ...newOperation,
+                        counter_end: e.target.value,
+                        distance: Math.max(0, end - start).toFixed(1)
+                      });
+                    }}
                     className="w-full p-2 rounded border"
                     style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
                     placeholder="0"
@@ -980,10 +919,10 @@ export default function EquipmentManagement() {
                     type="number"
                     step="0.1"
                     value={newOperation.distance}
-                    onChange={(e) => setNewOperation({...newOperation, distance: e.target.value})}
+                    readOnly
                     className="w-full p-2 rounded border"
-                    style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
-                    placeholder="0.0"
+                    style={{ borderColor: "var(--color-border)", background: "var(--color-muted)", color: "var(--color-foreground)", cursor: 'not-allowed' }}
+                    placeholder="Auto-calculé"
                   />
                 </div>
               </div>

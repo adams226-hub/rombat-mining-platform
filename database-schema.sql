@@ -1026,7 +1026,7 @@ INSERT INTO sites (name, code, location, description) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO users (username, email, password_hash, full_name, role, department) VALUES
-    ('admin', 'admin@rombat.com', crypt('admin123', gen_salt('bf', 12)), 'Administrateur ROMBAT', 'admin', 'IT')
+    ('admin', 'admin@rombat.com', crypt('admin123', gen_salt('bf', 12)), 'Amp Mines et Carrières', 'admin', 'IT')
 ON CONFLICT (username) DO NOTHING;
 
 -- ========================================

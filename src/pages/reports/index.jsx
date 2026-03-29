@@ -3,19 +3,23 @@ import { useNavigate } from "react-router-dom";
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { toastError, toastSuccess } from "../../utils/toast.jsx";
 import { miningService } from "../../config/supabase.js";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Reports() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fuelChartData, setFuelChartData] = useState([]);
+  const [costChartData, setCostChartData] = useState([]);
   const [showNewReportModal, setShowNewReportModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAutoGenModal, setShowAutoGenModal] = useState(false);
   const [selectedAutoGenType, setSelectedAutoGenType] = useState(null);
-  
+
   const [autoGenConfig, setAutoGenConfig] = useState({
     daily: { enabled: false, time: '08:00', recipients: '' },
     weekly: { enabled: false, day: 'monday', time: '08:00', recipients: '' },
@@ -31,22 +35,30 @@ export default function Reports() {
 
   useEffect(() => {
     loadReports();
+    loadChartData();
   }, []);
 
   const loadReports = async () => {
     try {
-      const result = await miningService.getReports('admin');
+      const result = await miningService.getReports();
       if (result.error) throw result.error;
-      
       setReports(result.data || []);
     } catch (error) {
-      console.error('Erreur lors du chargement des rapports:', error);
+      console.error('Erreur chargement rapports:', error);
       toastError("Erreur lors du chargement des rapports");
-      // Fallback vers des données vides en cas d'erreur
       setReports([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadChartData = async () => {
+    const [fuelRes, costRes] = await Promise.all([
+      miningService.getFuelChartData(),
+      miningService.getCostEvolutionData(),
+    ]);
+    setFuelChartData(fuelRes.data || []);
+    setCostChartData(costRes.data || []);
   };
 
   // Dimensions correctes selon la production
@@ -110,7 +122,7 @@ ${sub}
 
 - Productivité horaire moyenne: 71.6 t/h
 - Consommation carburant: 8,500 litres
-- Coût par tonne: 12.50 €
+- Coût par tonne: 12.50 FCFA
 - Taux de panne: 1.8%
 
 ---
@@ -118,13 +130,13 @@ Généré par ROMBAT Platform
 ${new Date().toLocaleString()}`;
         
       case 'financial':
-        return `${sep}\nRAPPORT FINANCIER\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nRevenus: 186,750.00 €\nDépenses: 124,820.00 €\nBénéfice: 61,930.00 €\nMarge: 33.2%\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+        return `${sep}\nRAPPORT FINANCIER\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nRevenus: 186,750.00 FCFA\nDépenses: 124,820.00 FCFA\nBénéfice: 61,930.00 FCFA\nMarge: 33.2%\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
         
       case 'maintenance':
-        return `${sep}\nRAPPORT DE MAINTENANCE\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nInterventions: 47\nPréventives: 32 (68.1%)\nCorrectives: 15 (31.9%)\nTemps d'arrêt: 28.5h\n\nCoût total: 24,450.00 €\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+        return `${sep}\nRAPPORT DE MAINTENANCE\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nInterventions: 47\nPréventives: 32 (68.1%)\nCorrectives: 15 (31.9%)\nTemps d'arrêt: 28.5h\n\nCoût total: 24,450.00 FCFA\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
         
       case 'summary':
-        return `${sep}\nBILAN TRIMESTRIEL\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nProduction: 145,200 tonnes\nRevenus: 560,250.00 €\nDépenses: 374,460.00 €\nBénéfice: 185,790.00 €\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
+        return `${sep}\nBILAN TRIMESTRIEL\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nPériode: ${report.period}\nDate: ${report.date}\n\n${sub}\nSYNTHÈSE\n${sub}\n\nProduction: 145,200 tonnes\nRevenus: 560,250.00 FCFA\nDépenses: 374,460.00 FCFA\nBénéfice: 185,790.00 FCFA\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
         
       default:
         return `${sep}\nRAPPORT\nROMBAT Mining Platform\n${sep}\n\nNom: ${report.name}\nType: ${report.type}\nPériode: ${report.period}\nDate: ${report.date}\n\n---\nGénéré par ROMBAT Platform\n${new Date().toLocaleString()}`;
@@ -171,28 +183,28 @@ ${new Date().toLocaleString()}`;
     }
   };
 
-  const handleCreateNewReport = () => {
+  const handleCreateNewReport = async () => {
     if (!newReport.name || !newReport.period) {
-      alert('Veuillez remplir le nom et la période');
+      toastError('Veuillez remplir le nom et la période');
       return;
     }
-    const reportToAdd = {
-      id: Date.now(),
-      name: newReport.name,
-      type: newReport.type,
-      date: new Date().toISOString().split('T')[0],
-      period: newReport.period,
-      status: 'generating',
-      size: '-',
-      format: newReport.format
-    };
-    setReports([reportToAdd, ...reports]);
-    setTimeout(() => {
-      setReports(prev => prev.map(r => r.id === reportToAdd.id ? { ...r, status: 'completed', size: (Math.random() * 3 + 1).toFixed(1) + ' MB' } : r));
-    }, 2000);
-    setShowNewReportModal(false);
-    setNewReport({ name: '', type: 'production', period: '', format: 'PDF' });
-    alert('Rapport créé! Génération en cours...');
+    try {
+      const { data, error } = await miningService.createReport({
+        name: newReport.name,
+        type: newReport.type,
+        period: newReport.period,
+        format: newReport.format,
+        status: 'completed',
+        report_date: new Date().toISOString().split('T')[0],
+      });
+      if (error) throw error;
+      toastSuccess('Rapport créé avec succès');
+      setShowNewReportModal(false);
+      setNewReport({ name: '', type: 'production', period: '', format: 'PDF' });
+      await loadReports();
+    } catch (error) {
+      toastError(`Erreur: ${error.message}`);
+    }
   };
 
   const handleConfigureAutoGen = (type) => {
@@ -200,9 +212,14 @@ ${new Date().toLocaleString()}`;
     setShowAutoGenModal(true);
   };
 
-  const handleDeleteReport = (id) => {
-    if (confirm('Supprimer ce rapport?')) {
-      setReports(reports.filter(r => r.id !== id));
+  const handleDeleteReport = async (id) => {
+    if (!confirm('Supprimer ce rapport?')) return;
+    try {
+      const { error } = await miningService.deleteReport(id);
+      if (error) throw error;
+      await loadReports();
+    } catch (error) {
+      toastError(`Erreur suppression: ${error.message}`);
     }
   };
 
@@ -212,7 +229,7 @@ ${new Date().toLocaleString()}`;
   const getStatusText = (status) => ({ completed: 'Terminé', generating: 'En cours', failed: 'Échoué' }[status] || status);
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>Rapports</h1>
@@ -247,7 +264,7 @@ ${new Date().toLocaleString()}`;
         <div className="p-4 rounded-xl border" style={{ background: "var(--color-card)" }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: "rgba(49,130,206,0.12)" }}><Icon name="Calendar" size={20} color="#3182CE" /></div>
-            <div><p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Ce Mois</p><p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{reports.filter(r => r.date.startsWith('2026-03')).length}</p></div>
+            <div><p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Ce Mois</p><p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{reports.filter(r => r.generated_at?.startsWith(new Date().toISOString().substring(0, 7)) || r.created_at?.startsWith(new Date().toISOString().substring(0, 7))).length}</p></div>
           </div>
         </div>
       </div>
@@ -294,20 +311,42 @@ ${new Date().toLocaleString()}`;
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <div className="rounded-xl border p-6" style={{ background: "var(--color-card)" }}>
-          <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>Consommation</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={[{ name: 'Excavateur', c: 450 }, { name: 'Percatrice', c: 380 }, { name: 'Convoyeur', c: 220 }, { name: 'Concasseur', c: 180 }, { name: 'Camion', c: 320 }]}>
-              <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="c" fill="#FF6B35" />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>Consommation Carburant ce Mois</h3>
+          {fuelChartData.length === 0 ? (
+            <div className="flex items-center justify-center h-56 text-sm" style={{ color: "var(--color-muted-foreground)" }}>
+              Aucune transaction carburant ce mois
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={fuelChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => [`${v} L`, 'Consommation']} />
+                <Bar dataKey="c" name="Consommation (L)" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
         <div className="rounded-xl border p-6" style={{ background: "var(--color-card)" }}>
-          <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>Évolution des Coûts</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={[{ mois: 'Jan', c: 22000, m: 15000 }, { mois: 'Fév', c: 24500, m: 18750 }, { mois: 'Mar', c: 23000, m: 16500 }]}>
-              <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="mois" /><YAxis /><Tooltip /><Legend /><Line type="monotone" dataKey="c" stroke="#FF6B35" /><Line type="monotone" dataKey="m" stroke="#F7931E" />
-            </LineChart>
-          </ResponsiveContainer>
+          <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--color-foreground)" }}>Évolution des Coûts (6 mois)</h3>
+          {costChartData.every(d => d.c === 0 && d.m === 0) ? (
+            <div className="flex items-center justify-center h-56 text-sm" style={{ color: "var(--color-muted-foreground)" }}>
+              Aucune donnée financière disponible
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={costChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                <XAxis dataKey="mois" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v, n) => [`${v.toLocaleString('fr-FR')} FCFA`, n]} />
+                <Legend />
+                <Line type="monotone" dataKey="c" name="Dépenses" stroke="#FF6B35" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="m" name="Revenus" stroke="var(--color-success)" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 

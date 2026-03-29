@@ -36,7 +36,7 @@ const ROLE_CONFIG = {
 export default function UserRoleIndicator({
   userRole = 'admin',
   userName = 'JD',
-  userSite = 'RomBat Exploration & Mines',
+  userSite = 'Amp Mines et Carrieres Exploration & Mines',
   isCollapsed = false,
   onLogout,
 }) {

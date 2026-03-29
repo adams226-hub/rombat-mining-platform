@@ -1,767 +1,727 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://kuluihwgrppsziezqrws.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1bHVpaHdncnBwc3ppZXpxcndzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNzc2NDksImV4cCI6MjA5OTY1MzY0OX0.hxcTNdiozovD5I3WtYsqvo4wb_bWNFchd7TMrU1-uHU';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Variables d\'environnement Supabase manquantes. Vérifiez votre fichier .env');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// helper: vérifie qu'un rôle appartient à une liste autorisée
-function ensureRoleAccess(userRole, allowedRoles) {
-  if (!allowedRoles.includes(userRole)) {
-    return { data: null, error: new Error('Accès refusé') };
-  }
-  return null;
-}
+// Client admin (service_role) — uniquement pour les opérations admin
+const supabaseAdmin = supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null;
 
-// Services pour la plateforme de mining
+// ============================================================
+// MINING SERVICE - Toutes les opérations base de données
+// Les contrôles d'accès sont gérés par les RLS Supabase.
+// ============================================================
+
 export const miningService = {
-  // Utilisateurs
-  async getUsers(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
-    
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*');
-      
-      if (error) {
-        console.warn('Users RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Get from localStorage (both admin users and auth users)
-        const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        const mergedData = [...adminUsers, ...authUsers];
-        return { data: mergedData, error: null };
-      }
-      
-      // Merge with fallback users if any
-      const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      const mergedData = [...(data || []), ...adminUsers, ...authUsers];
-      
-      return { data: mergedData, error };
-    } catch (err) {
-      console.error('Users service error:', err);
-      // Fallback: Get from localStorage
-      const adminUsers = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      const mergedData = [...adminUsers, ...authUsers];
-      return { data: mergedData, error: null };
-    }
+
+  // ============================================================
+  // PROFILES / UTILISATEURS
+  // ============================================================
+
+  async getUsers() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return { data, error };
   },
 
-  async getUserByEmail(email) {
-    if (!email) return { data: null, error: new Error('Email requis') };
+  async getUserById(id) {
     const { data, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
-      .eq('email', email)
+      .eq('id', id)
       .maybeSingle();
     return { data, error };
   },
 
-  async createUser(userRole, user) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
+  // Crée un compte auth Supabase + profil associé
+  async createUser(email, password, profile) {
+    const client = supabaseAdmin || supabase;
 
-    const allowedRoles = ['admin', 'supervisor', 'operator', 'viewer', 'directeur', 'chef_de_site', 'comptable', 'equipement'];
-    if (!allowedRoles.includes(user.role)) {
-      return { data: null, error: new Error(`Rôle utilisateur invalide: ${user.role}`) };
-    }
-
-    try {
-      const payload = {
-        ...user,
-        role: user.role,
-        is_active: user.is_active ?? true,
-        phone: user.phone || null,
-        avatar_url: user.avatar_url || null,
-        locale: user.locale || 'fr-FR',
-        timezone: user.timezone || 'UTC',
-        created_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('users')
-        .insert([payload]);
-
-      if (error) {
-        console.warn('User creation RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Store in localStorage
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const fallbackUser = {
-          id: Date.now().toString(), // Generate ID for fallback
-          ...payload,
-          password: 'temp_password_123' // Add password for authentication
-        };
-        users.push(fallbackUser);
-        localStorage.setItem('users_fallback', JSON.stringify(users));
-        
-        // Also add to auth system
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        authUsers.push({
-          id: fallbackUser.id,
-          username: fallbackUser.username,
-          password: 'temp_password_123',
-          email: fallbackUser.email,
-          full_name: fallbackUser.full_name,
-          role: fallbackUser.role,
-          department: fallbackUser.department
-        });
-        localStorage.setItem('auth_users', JSON.stringify(authUsers));
-        
-        return { data: [fallbackUser], error: null };
+    // Utiliser l'API Admin pour créer l'utilisateur sans confirmation email
+    const { data: authData, error: authError } = await client.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: profile.full_name,
+        role: profile.role,
+        username: profile.username
       }
+    });
 
-      return { data, error };
-    } catch (err) {
-      console.error('User creation error:', err);
-      // Fallback: Store in localStorage
-      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const fallbackUser = {
-        id: Date.now().toString(), // Generate ID for fallback
-        ...user,
-        role: user.role,
-        is_active: user.is_active ?? true,
-        created_at: new Date().toISOString(),
-        password: 'temp_password_123' // Add password for authentication
-      };
-      users.push(fallbackUser);
-      localStorage.setItem('users_fallback', JSON.stringify(users));
-      
-      // Also add to auth system
-      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      authUsers.push({
-        id: fallbackUser.id,
-        username: fallbackUser.username,
-        password: 'temp_password_123',
-        email: fallbackUser.email,
-        full_name: fallbackUser.full_name,
-        role: fallbackUser.role,
-        department: fallbackUser.department
-      });
-      localStorage.setItem('auth_users', JSON.stringify(authUsers));
-      
-      return { data: [fallbackUser], error: null };
-    }
-  },
+    if (authError) return { data: null, error: authError };
 
-  async updateUser(userRole, userId, updates) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
-
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('id', userId);
-
-      if (error) {
-        console.warn('User update RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Update in localStorage
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const index = users.findIndex(u => u.id === userId);
-        if (index !== -1) {
-          users[index] = { ...users[index], ...updates };
-          localStorage.setItem('users_fallback', JSON.stringify(users));
-          
-          // Also update auth system
-          const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-          const authIndex = authUsers.findIndex(u => u.id === userId);
-          if (authIndex !== -1) {
-            authUsers[authIndex] = { ...authUsers[authIndex], ...updates };
-            localStorage.setItem('auth_users', JSON.stringify(authUsers));
-          }
-          
-          return { data: [users[index]], error: null };
-        }
-        return { data: null, error: new Error('User not found') };
-      }
-
-      return { data, error };
-    } catch (err) {
-      console.error('User update error:', err);
-      // Fallback: Update in localStorage
-      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const index = users.findIndex(u => u.id === userId);
-      if (index !== -1) {
-        users[index] = { ...users[index], ...updates };
-        localStorage.setItem('users_fallback', JSON.stringify(users));
-        
-        // Also update auth system
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        const authIndex = authUsers.findIndex(u => u.id === userId);
-        if (authIndex !== -1) {
-          authUsers[authIndex] = { ...authUsers[authIndex], ...updates };
-          localStorage.setItem('auth_users', JSON.stringify(authUsers));
-        }
-        
-        return { data: [users[index]], error: null };
-      }
-      return { data: null, error: new Error('User not found') };
-    }
-  },
-
-  async deleteUser(userRole, userId) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
-
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId);
-
-      if (error) {
-        console.warn('User delete RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Delete from localStorage
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const filteredUsers = users.filter(u => u.id !== userId);
-        localStorage.setItem('users_fallback', JSON.stringify(filteredUsers));
-        
-        // Also delete from auth system
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        const filteredAuthUsers = authUsers.filter(u => u.id !== userId);
-        localStorage.setItem('auth_users', JSON.stringify(filteredAuthUsers));
-        
-        return { data: null, error: null };
-      }
-
-      return { data, error };
-    } catch (err) {
-      console.error('User delete error:', err);
-      // Fallback: Delete from localStorage
-      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const filteredUsers = users.filter(u => u.id !== userId);
-      localStorage.setItem('users_fallback', JSON.stringify(filteredUsers));
-      
-      // Also delete from auth system
-      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      const filteredAuthUsers = authUsers.filter(u => u.id !== userId);
-      localStorage.setItem('auth_users', JSON.stringify(filteredAuthUsers));
-      
-      return { data: null, error: null };
-    }
-  },
-
-  // Équipements
-  async getEquipment(userRole) {
+    // Upsert du profil
     const { data, error } = await supabase
-      .from('equipment')
-      .select('*');
-    return { data, error };
-  },
-
-  async createEquipment(userRole, equipment) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'equipement', 'chef_de_site']);
-    if (denied) return denied;
-    const { data, error } = await supabase
-      .from('equipment')
-      .insert([equipment]);
-    return { data, error };
-  },
-
-  // Production
-  async getProductionData(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'directeur', 'supervisor', 'operator']);
-    if (denied) return denied;
-    
-    try {
-      // Récupérer les données de production avec les détails
-      const { data: productionData, error } = await supabase
-        .from('production')
-        .select(`
-          *,
-          production_details (
-            dimension,
-            quantity
-          )
-        `)
-        .order('date', { ascending: false })
-        .limit(50);
-      
-      if (error) {
-        console.warn('Production RLS Error, using fallback:', error.message);
-        // Fallback: Use mock data for demo
-        const mockData = [
-          {
-            id: '1',
-            date: '2026-03-15',
-            site: 'Site Principal',
-            shift: 'Jour',
-            operator: 'JD',
-            notes: 'Production normale',
-            total: 795,
-            production_details: [
-              { dimension: 'Minerai', quantity: 280 },
-              { dimension: 'Forage', quantity: 145 },
-              { dimension: '0/4', quantity: 195 },
-              { dimension: '0/5', quantity: 175 }
-            ]
-          },
-          {
-            id: '2',
-            date: '2026-03-14',
-            site: 'Site Principal',
-            shift: 'Jour',
-            operator: 'JD',
-            notes: 'Production matin',
-            total: 880,
-            production_details: [
-              { dimension: 'Minerai', quantity: 320 },
-              { dimension: 'Forage', quantity: 160 },
-              { dimension: '0/4', quantity: 210 },
-              { dimension: '0/5', quantity: 190 }
-            ]
-          }
-        ];
-        return { data: mockData, error: null };
-      }
-      
-      return { data: productionData, error };
-    } catch (err) {
-      console.error('Production service error:', err);
-      // Return mock data if everything fails
-      const mockData = [
-        {
-          id: '1',
-          date: '2026-03-15',
-          site: 'Site Principal',
-          shift: 'Jour',
-          operator: 'JD',
-          notes: 'Production normale',
-          total: 795,
-          production_details: [
-            { dimension: 'Minerai', quantity: 280 },
-            { dimension: 'Forage', quantity: 145 }
-          ]
-        }
-      ];
-      return { data: mockData, error: null };
-    }
-  },
-
-  async addProductionData(userRole, production) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'directeur', 'supervisor', 'operator']);
-    if (denied) return denied;
-    
-    try {
-      // Insérer d'abord la production principale
-      const { data: productionResult, error: productionError } = await supabase
-        .from('production')
-        .insert([{
-          date: production.date,
-          site: production.site,
-          shift: production.shift,
-          operator: production.operator,
-          notes: production.notes,
-          total: production.total
-        }])
-        .select()
-        .single();
-      
-      if (productionError) {
-        console.warn('Production insert RLS Error, using fallback:', productionError.message);
-        // Fallback: Store in localStorage for demo
-        const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
-        const newProduction = {
-          id: Date.now().toString(),
-          ...production,
-          created_at: new Date().toISOString()
-        };
-        productions.push(newProduction);
-        localStorage.setItem('production_fallback', JSON.stringify(productions));
-        return { data: [newProduction], error: null };
-      }
-      
-      // Insérer les détails de production
-      const detailsToInsert = production.dimensions.map(dim => ({
-        production_id: productionResult.id,
-        dimension: dim.dimension,
-        quantity: parseFloat(dim.quantity) || 0
-      }));
-      
-      const { data: detailsResult, error: detailsError } = await supabase
-        .from('production_details')
-        .insert(detailsToInsert);
-      
-      if (detailsError) {
-        console.warn('Production details insert Error:', detailsError.message);
-      }
-      
-      return { data: [productionResult], error: null };
-    } catch (err) {
-      console.error('Production insert error:', err);
-      // Fallback: Store in localStorage for demo
-      const productions = JSON.parse(localStorage.getItem('production_fallback') || '[]');
-      const newProduction = {
-        id: Date.now().toString(),
-        ...production,
-        created_at: new Date().toISOString()
-      };
-      productions.push(newProduction);
-      localStorage.setItem('production_fallback', JSON.stringify(productions));
-      return { data: [newProduction], error: null };
-    }
-  },
-
-  // Dashboard
-  async getDashboardStats(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'directeur']);
-    if (denied) return denied;
-    try {
-      const { data, error } = await supabase
-        .from('dashboard_stats')
-        .select('*')
-        .order('stat_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) {
-        console.error('Erreur Supabase dashboard_stats:', error);
-        console.error('Détails erreur:', error.message);
-      }
-      return { data, error };
-    } catch (fetchError) {
-      console.error('Erreur fetch dashboard:', fetchError);
-      return { data: null, error: fetchError };
-    }
-  },
-
-  // Fuel Management
-  async getFuelTransactions(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
-    
-    try {
-      const { data, error } = await supabase
-        .from('fuel_transactions')
-        .select(`
-          *,
-          equipment:equipment_id (name),
-          site:site_id (name)
-        `)
-        .order('transaction_date', { ascending: false })
-        .limit(50);
-      
-      if (data) {
-        data.forEach(async (item) => {
-          if (item.operator_id) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('full_name')
-              .eq('id', item.operator_id)
-              .single();
-            item.operator = userData?.full_name || 'N/A';
-          } else {
-            item.operator = 'N/A';
-          }
-        });
-      }
-      
-      // Include fallback data if exists
-      const fallbackData = JSON.parse(localStorage.getItem('fuel_transactions_fallback') || '[]');
-      const allData = data ? [...data, ...fallbackData] : fallbackData;
-      
-      return { data: allData, error };
-    } catch (err) {
-      console.warn('Supabase error, using fallback only:', err);
-      // Return only fallback data if Supabase fails
-      const fallbackData = JSON.parse(localStorage.getItem('fuel_transactions_fallback') || '[]');
-      return { data: fallbackData, error: null };
-    }
-  },
-
-  async addFuelTransaction(userRole, entry) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
-    
-    const { date, ...rest } = entry;
-    const entryData = {
-      ...rest,
-      transaction_date: date,
-      operator_id: "550e8400-e29b-41d4-a716-446655440001" // Default operator ID for demo
-    };
-    
-    try {
-      const { data, error } = await supabase
-        .from('fuel_transactions')
-        .insert([entryData])
-        .select();
-      
-      if (error) {
-        console.warn('RLS Error, using fallback:', error.message);
-        // Fallback: Store in localStorage for demo
-        const transactions = JSON.parse(localStorage.getItem('fuel_transactions_fallback') || '[]');
-        const newTransaction = {
-          id: Date.now().toString(),
-          ...entryData,
-          created_at: new Date().toISOString()
-        };
-        transactions.push(newTransaction);
-        localStorage.setItem('fuel_transactions_fallback', JSON.stringify(transactions));
-        return { data: [newTransaction], error: null };
-      }
-      
-      return { data, error };
-    } catch (err) {
-      console.error('Transaction error:', err);
-      return { data: null, error: err };
-    }
-  },
-
-  async getEquipmentFuelSummary(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor']);
-    if (denied) return denied;
-    const { data, error } = await supabase
-      .from('equipment_performance')
-      .select('*')
-      .order('total_fuel_consumed', { ascending: false })
-      .limit(20);
-    return { data, error };
-  },
-
-  // Stock Management
-  async getStockEntries(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
-    const { data, error } = await supabase
-      .from('stock_entries')
-      .select(`
-        *,
-        stock_entry_details (*),
-        users:created_by (full_name)
-      `)
-      .order('date', { ascending: false });
-    return { data, error };
-  },
-
-  async getStockExits(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
-    const { data, error } = await supabase
-      .from('stock_exits')
-      .select(`
-        *,
-        stock_exit_details (*),
-        users:created_by (full_name)
-      `)
-      .order('date', { ascending: false });
-    return { data, error };
-  },
-
-  async addStockEntry(userRole, entry) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
-
-    const { dimensions, ...entryData } = entry;
-    const user = await supabase.auth.getUser();
-
-    // Créer l'entrée principale
-    const { data: entryResult, error: entryError } = await supabase
-      .from('stock_entries')
-      .insert([{
-        ...entryData,
-        created_by: user.data.user?.id || null
+      .from('profiles')
+      .upsert([{
+        id: authData.user.id,
+        username: profile.username,
+        full_name: profile.full_name,
+        role: profile.role,
+        department: profile.department || null,
+        is_active: true
       }])
       .select()
       .single();
 
-    if (entryError) return { data: null, error: entryError };
+    return { data, error };
+  },
 
-    // Ajouter les détails des dimensions
-    const detailsData = dimensions
-      .filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
-      .map(dim => ({
-        entry_id: entryResult.id,
-        dimension: dim.size,
-        quantity: parseFloat(dim.quantity)
+  // Met à jour le profil d'un utilisateur
+  async updateUser(userId, updates) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // Supprime définitivement un utilisateur (auth + profil)
+  async deleteUser(userId) {
+    const client = supabaseAdmin || supabase;
+    // Supprimer de auth.users (cascade sur profiles)
+    const { error: authError } = await client.auth.admin.deleteUser(userId);
+    if (authError) return { error: authError };
+    // Supprimer aussi de public.users si présent (legacy table)
+    await supabase.from('profiles').delete().eq('id', userId);
+    return { error: null };
+  },
+
+  async getUserStats() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, is_active, role');
+
+    if (error) return { data: null, error };
+
+    return {
+      data: {
+        total_users: data.length,
+        active_users: data.filter(u => u.is_active).length,
+        inactive_users: data.filter(u => !u.is_active).length,
+        admin_users: data.filter(u => u.role === 'admin').length,
+        updated_at: new Date().toISOString()
+      },
+      error: null
+    };
+  },
+
+  // ============================================================
+  // ÉQUIPEMENTS
+  // ============================================================
+
+  async getEquipment() {
+    const { data, error } = await supabase
+      .from('equipment')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return { data, error };
+  },
+
+  async createEquipment(equipment) {
+    const { data, error } = await supabase
+      .from('equipment')
+      .insert([equipment])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async updateEquipment(id, updates) {
+    const { data, error } = await supabase
+      .from('equipment')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async deleteEquipment(id) {
+    const { error } = await supabase
+      .from('equipment')
+      .delete()
+      .eq('id', id);
+    return { error };
+  },
+
+  async getMaintenance(equipmentId = null) {
+    let query = supabase
+      .from('maintenance')
+      .select('*')
+      .order('start_date', { ascending: false });
+
+    if (equipmentId) {
+      query = query.eq('equipment_id', equipmentId);
+    }
+
+    const { data, error } = await query;
+    return { data, error };
+  },
+
+  async addMaintenance(maintenance) {
+    const { data, error } = await supabase
+      .from('maintenance')
+      .insert([maintenance])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async getOperationLogs(equipmentId = null) {
+    let query = supabase
+      .from('equipment_operation_logs')
+      .select('*, equipment:equipment_id (name, type)')
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (equipmentId) query = query.eq('equipment_id', equipmentId);
+    const { data, error } = await query;
+    return { data, error };
+  },
+
+  async addOperationLog(log) {
+    const { data, error } = await supabase
+      .from('equipment_operation_logs')
+      .insert([log])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // ============================================================
+  // PRODUCTION
+  // ============================================================
+
+  async getProductionData() {
+    const { data, error } = await supabase
+      .from('production')
+      .select(`
+        *,
+        production_details (
+          dimension,
+          quantity
+        )
+      `)
+      .order('date', { ascending: false })
+      .limit(100);
+    return { data, error };
+  },
+
+  async addProductionData(production) {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { data: productionResult, error: productionError } = await supabase
+      .from('production')
+      .insert([{
+        date: production.date,
+        site: production.site,
+        shift: production.shift,
+        operator: production.operator,
+        notes: production.notes,
+        total: production.total,
+        created_by: user?.id || null
+      }])
+      .select()
+      .single();
+
+    if (productionError) return { data: null, error: productionError };
+
+    const details = production.dimensions
+      .filter(d => parseFloat(d.quantity) > 0)
+      .map(d => ({
+        production_id: productionResult.id,
+        dimension: d.dimension,
+        quantity: parseFloat(d.quantity)
       }));
 
-    if (detailsData.length > 0) {
+    if (details.length > 0) {
       const { error: detailsError } = await supabase
-        .from('stock_entry_details')
-        .insert(detailsData);
-
+        .from('production_details')
+        .insert(details);
       if (detailsError) return { data: null, error: detailsError };
     }
 
-    return { data: entryResult, error: null };
+    return { data: productionResult, error: null };
   },
 
-  async addStockExit(userRole, exit) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
+  // Sorties de production (livraisons / ventes)
+  async getProductionExits() {
+    const { data, error } = await supabase
+      .from('production_exits')
+      .select(`
+        *,
+        production_exit_details (
+          dimension,
+          quantity
+        )
+      `)
+      .order('date', { ascending: false });
+    return { data, error };
+  },
 
-    const { dimensions, ...exitData } = exit;
-    const user = await supabase.auth.getUser();
+  async addProductionExit(exit) {
+    const { data: { user } } = await supabase.auth.getUser();
 
-    // Créer la sortie principale
     const { data: exitResult, error: exitError } = await supabase
-      .from('stock_exits')
+      .from('production_exits')
       .insert([{
-        ...exitData,
-        created_by: user.data.user?.id || null
+        date: exit.date,
+        destination: exit.destination,
+        exit_type: exit.exit_type,
+        client_name: exit.client_name,
+        notes: exit.notes,
+        total: exit.total,
+        created_by: user?.id || null
       }])
       .select()
       .single();
 
     if (exitError) return { data: null, error: exitError };
 
-    // Ajouter les détails des dimensions
-    const detailsData = dimensions
-      .filter(dim => dim.quantity && parseFloat(dim.quantity) > 0)
-      .map(dim => ({
+    const details = exit.dimensions
+      .filter(d => parseFloat(d.quantity) > 0)
+      .map(d => ({
         exit_id: exitResult.id,
-        dimension: dim.size,
-        quantity: parseFloat(dim.quantity)
+        dimension: d.dimension,
+        quantity: parseFloat(d.quantity)
       }));
 
-    if (detailsData.length > 0) {
+    if (details.length > 0) {
       const { error: detailsError } = await supabase
-        .from('stock_exit_details')
-        .insert(detailsData);
-
+        .from('production_exit_details')
+        .insert(details);
       if (detailsError) return { data: null, error: detailsError };
     }
 
     return { data: exitResult, error: null };
   },
 
-  async getStockSummary(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'supervisor', 'operator']);
-    if (denied) return denied;
+  // ============================================================
+  // TRANSACTIONS FINANCIÈRES (Comptabilité)
+  // ============================================================
 
-    // Récupérer toutes les entrées et sorties
-    const [entriesResult, exitsResult] = await Promise.all([
+  async getFinancialTransactions() {
+    const { data, error } = await supabase
+      .from('financial_transactions')
+      .select('*')
+      .order('transaction_date', { ascending: false })
+      .limit(200);
+    return { data, error };
+  },
+
+  async addFinancialTransaction(transaction) {
+    const { data, error } = await supabase
+      .from('financial_transactions')
+      .insert([{
+        transaction_date: transaction.date,
+        type: transaction.type,
+        category: transaction.category,
+        description: transaction.description,
+        amount: parseFloat(transaction.amount),
+        reference: transaction.reference || null,
+        client_supplier: transaction.client_supplier || null,
+        payment_method: transaction.payment_method || null,
+        payment_status: transaction.status || 'pending',
+        notes: transaction.notes || null,
+      }])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async updateFinancialTransaction(id, updates) {
+    const { error } = await supabase
+      .from('financial_transactions')
+      .update(updates)
+      .eq('id', id);
+    return { error };
+  },
+
+  async deleteFinancialTransaction(id) {
+    const { error } = await supabase
+      .from('financial_transactions')
+      .delete()
+      .eq('id', id);
+    return { error };
+  },
+
+  // ============================================================
+  // CARBURANT
+  // ============================================================
+
+  async getFuelTransactions() {
+    const { data, error } = await supabase
+      .from('fuel_transactions')
+      .select(`
+        *,
+        equipment:equipment_id (name, type)
+      `)
+      .order('transaction_date', { ascending: false })
+      .limit(100);
+    return { data, error };
+  },
+
+  async addFuelTransaction(entry) {
+    const { data, error } = await supabase
+      .from('fuel_transactions')
+      .insert([{
+        transaction_date: entry.date,
+        equipment_id: entry.equipment_id,
+        fuel_type: entry.fuel_type,
+        quantity: parseFloat(entry.quantity),
+        cost_per_liter: parseFloat(entry.cost_per_liter),
+        supplier: entry.supplier || null,
+        notes: entry.notes || null,
+        operator_name: entry.operator_name || null,
+      }])
+
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async getEquipmentFuelSummary() {
+    const { data, error } = await supabase
+      .from('fuel_transactions')
+      .select(`
+        equipment_id,
+        equipment:equipment_id (name),
+        quantity,
+        transaction_date
+      `)
+      .order('transaction_date', { ascending: false });
+    return { data, error };
+  },
+
+  // ============================================================
+  // GESTION DU STOCK
+  // ============================================================
+
+  async getStockEntries() {
+    const { data, error } = await supabase
+      .from('stock_entries')
+      .select(`
+        *,
+        stock_entry_details (dimension, quantity)
+      `)
+      .order('entry_date', { ascending: false });
+    return { data, error };
+  },
+
+  async getStockExits() {
+    const { data, error } = await supabase
+      .from('stock_exits')
+      .select(`
+        *,
+        stock_exit_details (dimension, quantity)
+      `)
+      .order('exit_date', { ascending: false });
+    return { data, error };
+  },
+
+  async addStockEntry(entry) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { dimensions, ...entryData } = entry;
+
+    const { data: entryResult, error: entryError } = await supabase
+      .from('stock_entries')
+      .insert([{
+        entry_date: entryData.date || entryData.entry_date,
+        source: entryData.source,
+        notes: entryData.notes || null,
+        operator_id: user?.id || null
+      }])
+      .select()
+      .single();
+
+    if (entryError) return { data: null, error: entryError };
+
+    const details = dimensions
+      .filter(d => parseFloat(d.quantity) > 0)
+      .map(d => ({
+        stock_entry_id: entryResult.id,
+        dimension: d.size || d.dimension,
+        quantity: parseFloat(d.quantity)
+      }));
+
+    if (details.length > 0) {
+      const { error: detailsError } = await supabase
+        .from('stock_entry_details')
+        .insert(details);
+      if (detailsError) return { data: null, error: detailsError };
+    }
+
+    return { data: entryResult, error: null };
+  },
+
+  async addStockExit(exit) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { dimensions, ...exitData } = exit;
+
+    const { data: exitResult, error: exitError } = await supabase
+      .from('stock_exits')
+      .insert([{
+        exit_date: exitData.date || exitData.exit_date,
+        destination: exitData.destination,
+        exit_type: exitData.exit_type || 'sale',
+        client_name: exitData.client_name || null,
+        notes: exitData.notes || null,
+        operator_id: user?.id || null
+      }])
+      .select()
+      .single();
+
+    if (exitError) return { data: null, error: exitError };
+
+    const details = dimensions
+      .filter(d => parseFloat(d.quantity) > 0)
+      .map(d => ({
+        stock_exit_id: exitResult.id,
+        dimension: d.size || d.dimension,
+        quantity: parseFloat(d.quantity)
+      }));
+
+    if (details.length > 0) {
+      const { error: detailsError } = await supabase
+        .from('stock_exit_details')
+        .insert(details);
+      if (detailsError) return { data: null, error: detailsError };
+    }
+
+    return { data: exitResult, error: null };
+  },
+
+  async getStockSummary() {
+    // Entrées = production enregistrée + entrées manuelles de stock
+    // Sorties = sorties depuis la page production + sorties depuis la page stock
+    const [prodDetailsResult, stockEntriesResult, prodExitsResult, stockExitsResult] = await Promise.all([
+      supabase.from('production_details').select('dimension, quantity'),
       supabase.from('stock_entry_details').select('dimension, quantity'),
+      supabase.from('production_exit_details').select('dimension, quantity'),
       supabase.from('stock_exit_details').select('dimension, quantity')
     ]);
 
-    if (entriesResult.error || exitsResult.error) {
-      return { data: null, error: entriesResult.error || exitsResult.error };
-    }
+    const DIMENSIONS = [
+      'Minerai', 'Forage', '0/4', '0/5', '0/6',
+      '5/15', '8/15', '15/25', '4/6', '10/14', '6/10', '0/31,5'
+    ];
 
-    // Calculer le stock par dimension
-    const dimensions = ['Minerai', 'Forage', '0/4', '0/5', '0/6', '5/15', '8/15', '15/25', '4/6', '10/14', '6/10', '0/31,5'];
-    const stockSummary = dimensions.map(dim => {
-      const totalEntries = entriesResult.data
-        .filter(entry => entry.dimension === dim)
-        .reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+    const allEntries = [
+      ...(prodDetailsResult.data || []),
+      ...(stockEntriesResult.data || [])
+    ];
+    const allExits = [
+      ...(prodExitsResult.data || []),
+      ...(stockExitsResult.data || [])
+    ];
 
-      const totalExits = exitsResult.data
-        .filter(exit => exit.dimension === dim)
-        .reduce((sum, exit) => sum + parseFloat(exit.quantity), 0);
-
+    const stockSummary = DIMENSIONS.map(dim => {
+      const totalEntries = allEntries
+        .filter(e => e.dimension === dim)
+        .reduce((sum, e) => sum + parseFloat(e.quantity || 0), 0);
+      const totalExits = allExits
+        .filter(e => e.dimension === dim)
+        .reduce((sum, e) => sum + parseFloat(e.quantity || 0), 0);
       return {
         dimension: dim,
         entries: totalEntries,
         exits: totalExits,
-        available: totalEntries - totalExits
+        available: Math.max(0, totalEntries - totalExits)
       };
     });
 
     return { data: stockSummary, error: null };
   },
 
-// User Stats (new)
-  async getUserStats(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
+  // ============================================================
+  // DASHBOARD EXÉCUTIF
+  // ============================================================
 
-    const STAT_ID = '00000000-0000-0000-0000-000000000001';
+  async getDashboardStats() {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const today = now.toISOString().split('T')[0];
 
-    try {
-      const { data, error } = await supabase
-        .from('user_stats')
-        .select('*')
-        .eq('id', STAT_ID)
-        .maybeSingle();
+    // Start of current week (Monday)
+    const dayOfWeek = now.getDay(); // 0=Sun
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() + diffToMon);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
 
-      if (error) {
-        console.warn('UserStats RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Calculate from localStorage users
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        const allUsers = [...users, ...authUsers];
-        return {
-          data: {
-            total_users: allUsers.length,
-            active_users: allUsers.filter(u => u.is_active !== false).length,
-            inactive_users: allUsers.filter(u => u.is_active === false).length,
-            admin_users: allUsers.filter(u => u.role === 'admin').length,
-            updated_at: new Date().toISOString()
-          },
-          error: null
-        };
-      }
+    // 6 months ago (for profitability chart)
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const sixMonthsAgoStr = sixMonthsAgo.toISOString().split('T')[0];
 
-      // Merge with localStorage if no Supabase data
-      if (!data) {
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-        const allUsers = [...users, ...authUsers];
-        return {
-          data: {
-            total_users: allUsers.length,
-            active_users: allUsers.filter(u => u.is_active !== false).length,
-            inactive_users: allUsers.filter(u => u.is_active === false).length,
-            admin_users: allUsers.filter(u => u.role === 'admin').length,
-            updated_at: new Date().toISOString()
-          },
-          error: null
-        };
-      }
+    const [
+      productionMonthResult,
+      productionWeekResult,
+      equipmentResult,
+      fuelMonthResult,
+      fuelByEqResult,
+      financialMonthResult,
+      financialSixMonthResult,
+      sitesResult,
+    ] = await Promise.all([
+      supabase.from('production').select('total, date').gte('date', startOfMonth),
+      supabase.from('production').select('total, date').gte('date', weekStartStr).lte('date', today),
+      supabase.from('equipment').select('id, status, name, serial_number'),
+      supabase.from('fuel_transactions').select('quantity, cost_per_liter, total_cost').gte('transaction_date', startOfMonth),
+      supabase.from('fuel_transactions').select('equipment_id, quantity, total_cost, equipment:equipment_id(name, serial_number)').gte('transaction_date', startOfMonth),
+      supabase.from('financial_transactions').select('amount, type').gte('transaction_date', startOfMonth),
+      supabase.from('financial_transactions').select('amount, type, transaction_date').gte('transaction_date', sixMonthsAgoStr),
+      supabase.from('sites').select('id, name, location, is_active').order('name'),
+    ]);
 
-      return { data, error };
-    } catch (err) {
-      console.error('UserStats service error:', err);
-      // Fallback: Calculate from localStorage
-      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      const allUsers = [...users, ...authUsers];
-      return {
-        data: {
-          total_users: allUsers.length,
-          active_users: allUsers.filter(u => u.is_active !== false).length,
-          inactive_users: allUsers.filter(u => u.is_active === false).length,
-          admin_users: allUsers.filter(u => u.role === 'admin').length,
-          updated_at: new Date().toISOString()
-        },
-        error: null
-      };
+    const productionsMonth = productionMonthResult.data || [];
+    const productionsWeek = productionWeekResult.data || [];
+    const equipment = equipmentResult.data || [];
+    const fuelMonth = fuelMonthResult.data || [];
+    const fuelByEq = fuelByEqResult.data || [];
+    const financialMonth = financialMonthResult.data || [];
+    const financialSixMonth = financialSixMonthResult.data || [];
+    const sites = sitesResult.data || [];
+
+    // ── KPI aggregates ────────────────────────────────────────
+    const totalProductionMonth = productionsMonth.reduce((s, p) => s + parseFloat(p.total || 0), 0);
+    const todayStr = today;
+    const todayProduction = productionsMonth.filter(p => p.date === todayStr).reduce((s, p) => s + parseFloat(p.total || 0), 0);
+    const activeEquipment = equipment.filter(e => e.status === 'active').length;
+    const totalRevenue = financialMonth.filter(f => f.type === 'income').reduce((s, f) => s + parseFloat(f.amount), 0);
+    const totalExpenses = financialMonth.filter(f => f.type === 'expense').reduce((s, f) => s + parseFloat(f.amount), 0);
+    const netProfit = totalRevenue - totalExpenses;
+    const profitability = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    const costPerTon = totalProductionMonth > 0 ? totalExpenses / totalProductionMonth : 0;
+
+    // ── Fuel by equipment (chart) ─────────────────────────────
+    const fuelByEqMap = {};
+    fuelByEq.forEach(f => {
+      const label = f.equipment?.serial_number || f.equipment?.name?.substring(0, 8) || 'N/A';
+      if (!fuelByEqMap[label]) fuelByEqMap[label] = { engin: label, consommation: 0, cout: 0 };
+      fuelByEqMap[label].consommation += parseFloat(f.quantity || 0);
+      fuelByEqMap[label].cout += parseFloat(f.total_cost || 0);
+    });
+    const fuelChartData = Object.values(fuelByEqMap).sort((a, b) => b.consommation - a.consommation).slice(0, 6);
+
+    // ── Monthly profitability (6 months) ─────────────────────
+    const monthMap = {};
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('fr-FR', { month: 'short' });
+      monthMap[key] = { mois: label.charAt(0).toUpperCase() + label.slice(1), revenus: 0, depenses: 0, benefice: 0 };
     }
+    financialSixMonth.forEach(t => {
+      const key = t.transaction_date.substring(0, 7);
+      if (!monthMap[key]) return;
+      if (t.type === 'income') monthMap[key].revenus += parseFloat(t.amount);
+      else monthMap[key].depenses += parseFloat(t.amount);
+    });
+    Object.values(monthMap).forEach(m => { m.benefice = m.revenus - m.depenses; });
+    const monthlyProfitData = Object.values(monthMap);
+
+    // ── Production by day (current week) ─────────────────────
+    const DAY_LABELS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    const weekDayMap = {};
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      const key = d.toISOString().split('T')[0];
+      weekDayMap[key] = { jour: DAY_LABELS[d.getDay()], production: 0, objectif: 1500 };
+    }
+    productionsWeek.forEach(p => {
+      if (weekDayMap[p.date]) weekDayMap[p.date].production += parseFloat(p.total || 0);
+    });
+    const productionWeekData = Object.values(weekDayMap);
+
+    // ── Production by week (current month) ───────────────────
+    const weeklyMap = {};
+    productionsMonth.forEach(p => {
+      const d = new Date(p.date);
+      const weekNum = Math.ceil(d.getDate() / 7);
+      const key = `S${weekNum}`;
+      if (!weeklyMap[key]) weeklyMap[key] = { jour: key, production: 0, objectif: 10500 };
+      weeklyMap[key].production += parseFloat(p.total || 0);
+    });
+    const productionMonthData = Object.values(weeklyMap).sort((a, b) => a.jour.localeCompare(b.jour));
+
+    // ── Sites status ─────────────────────────────────────────
+    const sitesData = sites.map(s => ({
+      id: s.id,
+      name: s.name,
+      location: s.location,
+      status: s.is_active ? 'Opérationnel' : 'Arrêté',
+      is_active: s.is_active,
+    }));
+
+    return {
+      data: {
+        // KPIs
+        total_production: todayProduction,
+        total_production_month: totalProductionMonth,
+        equipment_count: equipment.length,
+        active_equipment: activeEquipment,
+        equipment_availability: equipment.length > 0 ? (activeEquipment / equipment.length) * 100 : 0,
+        total_revenue: totalRevenue,
+        total_expenses: totalExpenses,
+        net_profit: netProfit,
+        profitability,
+        cost_per_ton: costPerTon,
+        // Charts
+        fuel_chart_data: fuelChartData,
+        monthly_profit_data: monthlyProfitData,
+        production_week_data: productionWeekData,
+        production_month_data: productionMonthData,
+        // Tables
+        sites: sitesData,
+      },
+      error: null
+    };
   },
 
-  // Reports
-  async getUsers(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin']);
-    if (denied) return denied;
+  // ============================================================
+  // OBJECTIFS
+  // ============================================================
 
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*');
-
-      if (error) {
-        console.warn('Users RLS Error, using localStorage fallback:', error.message);
-        // Fallback: Use localStorage
-        const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-        return { data: users, error: null };
-      }
-
-      return { data, error };
-    } catch (err) {
-      console.error('Users service error:', err);
-      // Fallback: Use localStorage
-      const users = JSON.parse(localStorage.getItem('users_fallback') || '[]');
-      return { data: users, error: null };
-    }
+  async getObjectives(site = 'all') {
+    const { data, error } = await supabase
+      .from('objectives')
+      .select('*')
+      .eq('active', true)
+      .or(`site.eq.${site},site.eq.all`);
+    return { data, error };
   },
 
-  async getReports(userRole) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'directeur']);
-    if (denied) return denied;
+  async upsertObjective(objective) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('objectives')
+      .upsert([{ ...objective, created_by: user?.id }], {
+        onConflict: 'dimension,site,period_type'
+      })
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // ============================================================
+  // RAPPORTS
+  // ============================================================
+
+  async getReports() {
     const { data, error } = await supabase
       .from('reports')
       .select('*')
@@ -769,14 +729,58 @@ export const miningService = {
     return { data, error };
   },
 
-  async createReport(userRole, report) {
-    const denied = ensureRoleAccess(userRole, ['admin', 'directeur']);
-    if (denied) return denied;
+  async createReport(report) {
     const { data, error } = await supabase
       .from('reports')
-      .insert([report]);
+      .insert([{ ...report }])
+      .select()
+      .single();
     return { data, error };
-  }
+  },
+
+  async deleteReport(id) {
+    const { error } = await supabase.from('reports').delete().eq('id', id);
+    return { error };
+  },
+
+  async getFuelChartData() {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const { data, error } = await supabase
+      .from('fuel_transactions')
+      .select('quantity, equipment:equipment_id(name)')
+      .gte('transaction_date', startOfMonth);
+    if (error) return { data: [], error };
+    const map = {};
+    (data || []).forEach(f => {
+      const name = f.equipment?.name || 'Inconnu';
+      const short = name.length > 12 ? name.substring(0, 12) + '…' : name;
+      map[short] = (map[short] || 0) + parseFloat(f.quantity || 0);
+    });
+    return { data: Object.entries(map).map(([name, c]) => ({ name, c: Math.round(c) })), error: null };
+  },
+
+  async getCostEvolutionData() {
+    const now = new Date();
+    const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().split('T')[0];
+    const { data, error } = await supabase
+      .from('financial_transactions')
+      .select('amount, type, transaction_date')
+      .gte('transaction_date', sixAgo);
+    if (error) return { data: [], error };
+    const months = {};
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('fr-FR', { month: 'short' });
+      months[key] = { mois: label.charAt(0).toUpperCase() + label.slice(1), c: 0, m: 0 };
+    }
+    (data || []).forEach(t => {
+      const key = t.transaction_date.substring(0, 7);
+      if (!months[key]) return;
+      if (t.type === 'expense') months[key].c += parseFloat(t.amount);
+      else months[key].m += parseFloat(t.amount);
+    });
+    return { data: Object.values(months), error: null };
+  },
 };
-
-

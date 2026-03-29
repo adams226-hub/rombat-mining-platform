@@ -17,114 +17,64 @@ import ExportPanel from "./components/ExportPanel";
 export default function ExecutiveDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [currentUser, setCurrentUser] = useState(null);
   const [kpiData, setKpiData] = useState([]);
+  const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [lastRefresh] = useState(new Date());
+  const [lastRefresh, setLastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    // Récupérer l'utilisateur connecté
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      setCurrentUser(user);
-    }
     loadDashboardData();
   }, []);
 
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const { data, error } = await miningService.getDashboardStats(user?.role);
+      const { data, error } = await miningService.getDashboardStats();
+      if (error) { console.error('Erreur dashboard:', error); return; }
+      if (!data) return;
 
-      if (error) {
-        console.error('Erreur chargement dashboard:', error);
-        setKpiData([
-          {
-            id: 1,
-            title: "Production du Jour",
-            value: "0",
-            unit: "t",
-            trend: "down",
-            trendValue: "-",
-            icon: "Mountain",
-            iconColor: "var(--color-primary)",
-            bgColor: "rgba(44,85,48,0.12)",
-            subtitle: "Pas de données disponibles",
-            color: "var(--color-primary)",
-            progress: 0,
-            progressColor: "var(--color-primary)",
-          },
-        ]);
-        return;
-      }
+      setDashboardData(data);
 
-      if (!data) {
-        setKpiData([
-          {
-            id: 1,
-            title: "Production du Jour",
-            value: "0",
-            unit: "t",
-            trend: "stable",
-            trendValue: "0%",
-            icon: "Mountain",
-            iconColor: "var(--color-primary)",
-            bgColor: "rgba(44,85,48,0.12)",
-            subtitle: "Aucune donnée disponible",
-            color: "var(--color-primary)",
-            progress: 0,
-            progressColor: "var(--color-primary)",
-          },
-        ]);
-        return;
-      }
-
-      const productionDay = Number(data.total_production || 0);
-      const revenue = Number(data.total_revenue || 0);
-      const expenses = Number(data.total_expenses || 0);
-      const costPerTon = productionDay > 0 ? (revenue / productionDay).toFixed(2) : 0;
       const availability = Number(data.equipment_availability || 0);
-
-      const transformedKpis = [
+      setKpiData([
         {
           id: 1,
           title: "Production du Jour",
-          value: productionDay.toLocaleString('fr-FR'),
+          value: Number(data.total_production || 0).toLocaleString('fr-FR'),
           unit: "t",
-          trend: productionDay >= 0 ? "up" : "down",
-          trendValue: productionDay > 0 ? "+0%" : "0%",
+          trend: data.total_production > 0 ? "up" : "stable",
+          trendValue: data.total_production > 0 ? "+" + Number(data.total_production).toLocaleString('fr-FR') + "t" : "0t",
           icon: "Mountain",
           iconColor: "var(--color-primary)",
           bgColor: "rgba(44,85,48,0.12)",
-          subtitle: "Production actuelle",
+          subtitle: "Production aujourd'hui",
           color: "var(--color-primary)",
-          progress: Math.min(100, productionDay > 0 ? 100 : 0),
+          progress: Math.min(100, (Number(data.total_production) / 1500) * 100),
           progressColor: "var(--color-primary)",
         },
         {
           id: 2,
           title: "Production du Mois",
-          value: data.total_production_month?.toLocaleString?.('fr-FR') || "0",
+          value: Number(data.total_production_month || 0).toLocaleString('fr-FR'),
           unit: "t",
           trend: "up",
-          trendValue: "+0%",
+          trendValue: Number(data.total_production_month || 0).toLocaleString('fr-FR') + "t",
           icon: "BarChart3",
           iconColor: "#3182CE",
           bgColor: "rgba(49,130,206,0.12)",
-          subtitle: "Production cumulée",
+          subtitle: "Production cumulée ce mois",
           color: "#3182CE",
-          progress: data.total_production_month ? Math.min(100, (Number(data.total_production_month) / 50000) * 100) : 0,
+          progress: Math.min(100, (Number(data.total_production_month || 0) / 50000) * 100),
           progressColor: "#3182CE",
         },
         {
           id: 3,
           title: "Engins Actifs",
-          value: availability ? `${availability.toFixed(1)} %` : "0 %",
+          value: `${availability.toFixed(1)} %`,
           unit: "",
-          trend: "stable",
-          trendValue: "0%",
+          trend: availability >= 80 ? "up" : availability >= 50 ? "stable" : "down",
+          trendValue: `${data.active_equipment}/${data.equipment_count}`,
           icon: "Activity",
           iconColor: "#F59E0B",
           bgColor: "rgba(245,158,11,0.12)",
@@ -136,24 +86,21 @@ export default function ExecutiveDashboard() {
         {
           id: 4,
           title: "Coût par Tonne",
-          value: costPerTon.toString(),
-          unit: "€",
-          trend: "down",
-          trendValue: "-",
+          value: Number(data.cost_per_ton || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }),
+          unit: "FCFA/t",
+          trend: (data.cost_per_ton || 0) < 9 ? "up" : "down",
+          trendValue: (data.cost_per_ton || 0) < 9 ? "< 9 FCFA/t ✓" : "> 9 FCFA/t",
           icon: "DollarSign",
           iconColor: "#22C55E",
           bgColor: "rgba(34,197,94,0.12)",
-          subtitle: "Économie actuelle",
+          subtitle: "Objectif: < 9,00 FCFA/t",
           color: "#22C55E",
-          progress: costPerTon > 0 ? Math.min(100, (3 / costPerTon) * 100) : 0,
+          progress: data.cost_per_ton > 0 ? Math.min(100, (9 / data.cost_per_ton) * 100) : 0,
           progressColor: "#22C55E",
         },
-      ];
-
-      setKpiData(transformedKpis);
+      ]);
     } catch (err) {
       console.error('Erreur:', err);
-      setKpiData([]);
     } finally {
       setLoading(false);
     }
@@ -163,15 +110,15 @@ export default function ExecutiveDashboard() {
     return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    setLastRefresh(new Date());
+    await loadDashboardData();
+    setRefreshing(false);
   };
 
   return (
-    <AppLayout userRole={currentUser?.role || 'admin'} userName={currentUser?.full_name || 'Utilisateur'} userSite={currentUser?.department || 'RomBat'}>
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite={user?.department || 'Amp Mines et Carrieres'}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -181,7 +128,7 @@ export default function ExecutiveDashboard() {
             className="text-sm mt-1"
             style={{ color: "var(--color-muted-foreground)", fontFamily: "var(--font-caption)" }}
           >
-            Vue exécutive en temps réel — Jeudi 05 mars 2026
+            Vue exécutive en temps réel — {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -246,22 +193,31 @@ export default function ExecutiveDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
         {/* Production chart - 2 cols */}
         <div className="lg:col-span-2">
-          <ProductionChart />
+          <ProductionChart
+            weekData={dashboardData?.production_week_data || []}
+            monthData={dashboardData?.production_month_data || []}
+          />
         </div>
         {/* Alerts panel - 1 col */}
         <div className="lg:col-span-1">
-          <AlertsPanel onNavigate={navigate} />
+          <AlertsPanel onNavigate={navigate} dashboardData={dashboardData} />
         </div>
       </div>
       {/* Second row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-        <FuelCostChart />
-        <ProfitabilityChart />
+        <FuelCostChart data={dashboardData?.fuel_chart_data || []} />
+        <ProfitabilityChart data={dashboardData?.monthly_profit_data || []} />
       </div>
       {/* Financial summary + Export */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
         <div className="lg:col-span-2">
-          <FinancialSummary />
+          <FinancialSummary
+            revenue={dashboardData?.total_revenue || 0}
+            expenses={dashboardData?.total_expenses || 0}
+            netProfit={dashboardData?.net_profit || 0}
+            costPerTon={dashboardData?.cost_per_ton || 0}
+            profitability={dashboardData?.profitability || 0}
+          />
         </div>
         <div className="lg:col-span-1">
           <ExportPanel />
@@ -269,7 +225,7 @@ export default function ExecutiveDashboard() {
       </div>
       {/* Site status table */}
       <div className="mb-6 md:mb-8">
-        <SiteStatusTable />
+        <SiteStatusTable sites={dashboardData?.sites || []} />
       </div>
       {/* Quick navigation footer */}
       <div

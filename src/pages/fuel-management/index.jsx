@@ -5,7 +5,9 @@ import AppLayout from "../../components/navigation/AppLayout";
 import Icon from "../../components/AppIcon";
 import Button from "../../components/ui/Button";
 import { miningService } from "../../config/supabase";
+import { useAuth } from "../../context/AuthContext";
 import toast from "../../utils/toast";
+import { default as hotToast } from "react-hot-toast";
 
 export default function FuelManagement() {
   const navigate = useNavigate();
@@ -16,13 +18,15 @@ export default function FuelManagement() {
   const [newEntry, setNewEntry] = useState({
     date: '',
     equipment_id: '',
-    fuel_type: 'diesel',
+    fuel_type: 'gasoil',
     quantity: '',
     cost_per_liter: '',
     supplier: '',
+    operator_name: '',
     notes: ''
   });
-  const userRole = 'admin'; // From auth context in real app
+  const { user } = useAuth();
+  const userRole = user?.role;
 
   const loadFuelData = async () => {
     setLoading(true);
@@ -53,61 +57,11 @@ export default function FuelManagement() {
   const loadEquipment = async () => {
     try {
       const { data, error } = await miningService.getEquipment(userRole);
-      if (error || !data || data.length === 0) {
-        console.log('Aucun équipement trouvé en base, utilisation des données de démonstration');
-        // Données mock avec UUIDs valides pour la démo
-        setEquipment([
-          {
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Excavateur CAT 349",
-            serial_number: "EXC001",
-            type: "excavator",
-            status: "active"
-          },
-          {
-            id: "550e8400-e29b-41d4-a716-446655440002",
-            name: "Percatrice Atlas Copco",
-            serial_number: "DRILL001",
-            type: "drill",
-            status: "active"
-          },
-          {
-            id: "550e8400-e29b-41d4-a716-446655440003",
-            name: "Convoyeur Principal",
-            serial_number: "CV001",
-            type: "conveyor",
-            status: "maintenance"
-          },
-          {
-            id: "550e8400-e29b-41d4-a716-446655440004",
-            name: "Chargeur sur Roues",
-            serial_number: "LOAD001",
-            type: "loader",
-            status: "active"
-          }
-        ]);
-      } else {
-        setEquipment(data);
-      }
+      if (error) throw error;
+      setEquipment(data || []);
     } catch (error) {
-      console.error('Erreur de chargement des équipements, utilisation des données de démonstration');
-      // Fallback vers données mock
-      setEquipment([
-        {
-          id: "550e8400-e29b-41d4-a716-446655440001",
-          name: "Excavateur CAT 349",
-          serial_number: "EXC001",
-          type: "excavator",
-          status: "active"
-        },
-        {
-          id: "550e8400-e29b-41d4-a716-446655440002",
-          name: "Percatrice Atlas Copco",
-          serial_number: "DRILL001",
-          type: "drill",
-          status: "active"
-        }
-      ]);
+      console.error('Erreur de chargement des équipements:', error);
+      setEquipment([]);
     }
   };
 
@@ -135,21 +89,6 @@ export default function FuelManagement() {
     consommation: Math.round(qty * 100) / 100
   }));
 
-  // Données mock pour les graphiques si aucune donnée réelle
-  const mockChartData = [
-    { machine: "EX-001", consommation: 420 },
-    { machine: "EX-002", consommation: 380 },
-    { machine: "DR-001", consommation: 290 },
-    { machine: "CV-001", consommation: 310 }
-  ];
-
-  const mockCostData = [
-    { date: "01/03/2026", coût: 756 },
-    { date: "05/03/2026", coût: 684 },
-    { date: "10/03/2026", coût: 522 },
-    { date: "15/03/2026", coût: 558 }
-  ];
-
   // Données pour le graphique Évolution Coûts
   const costByDate = consumption.reduce((acc, item) => {
     const date = item.date ? new Date(item.date).toISOString().split('T')[0] : 'Inconnue';
@@ -173,9 +112,10 @@ export default function FuelManagement() {
       return;
     }
 
+    const loadingId = hotToast.loading('Enregistrement...', { position: 'top-right' });
     try {
-      toast.loading('Enregistrement...');
-      const { data, error } = await miningService.addFuelTransaction(userRole, newEntry);
+      const { data, error } = await miningService.addFuelTransaction(newEntry);
+      toast.dismiss(loadingId);
       if (error) {
         toast.error(`Erreur: ${error.message}`);
       } else {
@@ -184,21 +124,23 @@ export default function FuelManagement() {
         setNewEntry({
           date: '',
           equipment_id: '',
-          fuel_type: 'diesel',
+          fuel_type: 'gasoil',
           quantity: '',
           cost_per_liter: '',
           supplier: '',
+          operator_name: '',
           notes: ''
         });
-        loadFuelData(); // Reload
+        loadFuelData();
       }
     } catch (error) {
+      toast.dismiss(loadingId);
       toast.error('Erreur lors de l\'enregistrement');
     }
   };
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres">
       {/* Header same as before */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -257,7 +199,7 @@ export default function FuelManagement() {
             </div>
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Coût Total</p>
-              <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{totalCost.toFixed(2)} €</p>
+              <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{totalCost.toLocaleString('fr-FR')} FCFA</p>
             </div>
           </div>
         </div>
@@ -268,7 +210,7 @@ export default function FuelManagement() {
             </div>
             <div>
               <p className="text-sm" style={{ color: "var(--color-muted-foreground)" }}>Coût Moyen/L</p>
-              <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{avgCostPerL} €</p>
+              <p className="text-xl font-bold" style={{ color: "var(--color-foreground)" }}>{avgCostPerL} FCFA</p>
             </div>
           </div>
         </div>
@@ -301,7 +243,7 @@ export default function FuelManagement() {
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Opérateur</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Type</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Quantité (L)</th>
-                <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Coût (€)</th>
+                <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Coût (FCFA)</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Site</th>
                 <th className="text-left p-4 text-sm font-medium" style={{ color: "var(--color-muted-foreground)" }}>Actions</th>
               </tr>
@@ -354,9 +296,9 @@ export default function FuelManagement() {
             Consommation par Machine
           </h3>
           <div className="h-64">
-            {(consumptionChartData.length > 0 ? consumptionChartData : mockChartData).length > 0 ? (
+            {consumptionChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={consumptionChartData.length > 0 ? consumptionChartData : mockChartData}>
+                <BarChart data={consumptionChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis 
                     dataKey="machine" 
@@ -386,9 +328,9 @@ export default function FuelManagement() {
             Évolution Coûts
           </h3>
           <div className="h-64">
-            {(costEvolutionData.length > 0 ? costEvolutionData : mockCostData).length > 0 ? (
+            {costEvolutionData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={costEvolutionData.length > 0 ? costEvolutionData : mockCostData}>
+                <LineChart data={costEvolutionData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis 
                     dataKey="date" 
@@ -401,7 +343,7 @@ export default function FuelManagement() {
                     axisLine={false}
                     tickLine={false}
                   />
-                  <Tooltip formatter={(value) => [`${value} €`, 'Coût']} />
+                  <Tooltip formatter={(value) => [`${value} FCFA`, 'Coût']} />
                   <Legend />
                   <Line type="monotone" dataKey="coût" stroke="var(--color-warning)" strokeWidth={2} />
                 </LineChart>
@@ -460,17 +402,6 @@ export default function FuelManagement() {
                     </option>
                   ))}
                 </select>
-                {equipment.length > 0 && (
-                  <p className="text-xs mt-1" style={{ color: "var(--color-muted-foreground)" }}>
-                    💡 Ces équipements sont des données de démonstration. 
-                    <button 
-                      onClick={() => navigate('/equipment-management')}
-                      className="text-blue-500 hover:underline ml-1"
-                    >
-                      Ajoutez vos vrais équipements ici
-                    </button>
-                  </p>
-                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
@@ -486,10 +417,8 @@ export default function FuelManagement() {
                     color: "var(--color-foreground)"
                   }}
                 >
-                  <option value="diesel">Diesel</option>
                   <option value="essence">Essence</option>
                   <option value="gasoil">Gasoil</option>
-                  <option value="hybrid">Hybride</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -513,7 +442,7 @@ export default function FuelManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
-                    Prix/L (€) *
+                    Prix/L (FCFA) *
                   </label>
                   <input
                     type="number"
@@ -530,6 +459,31 @@ export default function FuelManagement() {
                   />
                 </div>
               </div>
+              {/* Total calculé en temps réel */}
+              {newEntry.quantity && newEntry.cost_per_liter && (
+                <div className="p-3 rounded-lg" style={{ background: "rgba(44,85,48,0.08)", border: "1px solid var(--color-primary)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "var(--color-primary)" }}>
+                    Total: {(parseFloat(newEntry.quantity) * parseFloat(newEntry.cost_per_liter)).toLocaleString('fr-FR')} FCFA
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
+                  Opérateur
+                </label>
+                <input
+                  type="text"
+                  value={newEntry.operator_name}
+                  onChange={(e) => setNewEntry({...newEntry, operator_name: e.target.value})}
+                  className="w-full p-3 rounded-lg border transition-colors"
+                  style={{
+                    borderColor: "var(--color-border)",
+                    background: "var(--color-input)",
+                    color: "var(--color-foreground)"
+                  }}
+                  placeholder="Nom de l'opérateur"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--color-foreground)" }}>
                   Fournisseur
@@ -539,7 +493,7 @@ export default function FuelManagement() {
                   value={newEntry.supplier}
                   onChange={(e) => setNewEntry({...newEntry, supplier: e.target.value})}
                   className="w-full p-3 rounded-lg border transition-colors"
-                  style={{ 
+                  style={{
                     borderColor: "var(--color-border)",
                     background: "var(--color-input)",
                     color: "var(--color-foreground)"

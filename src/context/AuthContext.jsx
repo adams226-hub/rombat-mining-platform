@@ -1,89 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../config/supabase';
 
 const AuthContext = createContext(null);
 
-// Liste des utilisateurs par défaut + utilisateurs dynamiques
-const DEFAULT_USERS = [
-  {
-    id: 1,
-    username: "admin",
-    password: "admin123",
-    email: "admin@rombat.com",
-    full_name: "Administrateur ROMBAT",
-    role: "admin",
-    department: "IT"
-  },
-  {
-    id: 2,
-    username: "directeur",
-    password: "dir123",
-    email: "directeur@rombat.com",
-    full_name: "Directeur Général",
-    role: "directeur",
-    department: "Direction"
-  },
-  {
-    id: 3,
-    username: "chefsite",
-    password: "chef123",
-    email: "chefsite@rombat.com",
-    full_name: "Chef de Site Principal",
-    role: "chef_de_site",
-    department: "Exploitation"
-  },
-  {
-    id: 4,
-    username: "comptable",
-    password: "comp123",
-    email: "comptable@rombat.com",
-    full_name: "Comptable Principal",
-    role: "comptable",
-    department: "Finance"
-  },
-  {
-    id: 5,
-    username: "supervisor",
-    password: "sup123",
-    email: "supervisor@rombat.com",
-    full_name: "Chef de Production",
-    role: "supervisor",
-    department: "Production"
-  },
-  {
-    id: 6,
-    username: "operator1",
-    password: "op123",
-    email: "operator1@rombat.com",
-    full_name: "Opérateur 1",
-    role: "operator",
-    department: "Mining"
-  },
-  {
-    id: 7,
-    username: "equipement",
-    password: "equip123",
-    email: "equipement@rombat.com",
-    full_name: "Responsable Équipement",
-    role: "equipement",
-    department: "Équipement"
-  }
-];
-
-// Fonction pour obtenir tous les utilisateurs (par défaut + dynamiques)
-const getAllUsers = () => {
-  const dynamicUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-  return [...DEFAULT_USERS, ...dynamicUsers];
-};
-
-// Configuration des routes accessibles par rôle
+// Permissions par rôle : quelles routes chaque rôle peut accéder
 const ROLE_PERMISSIONS = {
-  admin: ['/', '/executive-dashboard', '/production-management', '/equipment-management', '/fuel-management', '/accounting', '/reports', '/administration', '/stock-management'],
-  directeur: ['/', '/executive-dashboard', '/production-management', '/equipment-management', '/fuel-management', '/accounting', '/reports', '/stock-management'],
-  chef_de_site: ['/equipment-management'],
-  comptable: ['/accounting'],
-  equipement: ['/equipment-management'],
-  supervisor: ['/production-management', '/stock-management'], // Supervisor n'accède PAS au dashboard
-  operator: ['/production-management', '/stock-management']
+  admin:        ['/', '/executive-dashboard', '/production-management', '/equipment-management', '/fuel-management', '/accounting', '/reports', '/administration', '/stock-management', '/data-explorer'],
+  directeur:    ['/', '/executive-dashboard', '/production-management', '/equipment-management', '/fuel-management', '/accounting', '/reports', '/stock-management', '/data-explorer'],
+  chef_de_site: ['/', '/equipment-management', '/data-explorer'],
+  comptable:    ['/', '/accounting', '/data-explorer'],
+  equipement:   ['/', '/equipment-management', '/accounting', '/data-explorer'],
+  supervisor:   ['/', '/production-management', '/stock-management', '/data-explorer'],
+  operator:     ['/', '/production-management', '/stock-management']
 };
 
 export function AuthProvider({ children }) {
@@ -91,54 +19,107 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Vérifier si un utilisateur est déjà connecté
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem('currentUser');
+    // Récupérer la session existante au démarrage
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user);
+      } else {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    });
+
+    // Écouter les changements d'état d'authentification
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        loadUserProfile(session.user);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = (username, password) => {
-    const allUsers = getAllUsers(); // Utiliser les utilisateurs par défaut + dynamiques
-    const foundUser = allUsers.find(u => u.username === username && u.password === password);
-    if (foundUser) {
-      const userData = { ...foundUser };
-      delete userData.password; // Ne pas stocker le mot de passe
-      localStorage.setItem('currentUser', JSON.stringify(userData));
-      setUser(userData);
-      return { success: true, user: userData };
+  const loadUserProfile = async (authUser) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setUser({
+        id: authUser.id,
+        email: authUser.email,
+        username: profile?.username || authUser.email.split('@')[0],
+        full_name: profile?.full_name || authUser.email,
+        role: profile?.role || 'operator',
+        department: profile?.department || null,
+        is_active: profile?.is_active ?? true
+      });
+    } catch (err) {
+      console.error('Erreur chargement profil:', err);
+      // En cas d'erreur, utiliser les métadonnées de l'utilisateur auth
+      setUser({
+        id: authUser.id,
+        email: authUser.email,
+        username: authUser.user_metadata?.username || authUser.email.split('@')[0],
+        full_name: authUser.user_metadata?.full_name || authUser.email,
+        role: authUser.user_metadata?.role || 'operator',
+        department: null,
+        is_active: true
+      });
+    } finally {
+      setLoading(false);
     }
-    return { success: false, error: 'Identifiants incorrects' };
   };
 
-  const logout = () => {
-    localStorage.removeItem('currentUser');
+  const login = async (email, password) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        // Message d'erreur en français
+        if (error.message.includes('Invalid login credentials')) {
+          return { success: false, error: 'Email ou mot de passe incorrect' };
+        }
+        if (error.message.includes('Email not confirmed')) {
+          return { success: false, error: 'Veuillez confirmer votre email avant de vous connecter' };
+        }
+        return { success: false, error: error.message };
+      }
+      // Le profil sera chargé via onAuthStateChange
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Erreur de connexion. Veuillez réessayer.' };
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
   };
 
   const hasAccess = (path) => {
     if (!user) return false;
     const allowedPaths = ROLE_PERMISSIONS[user.role] || [];
-    return allowedPaths.includes(path);
+    // Vérifier si le chemin exact ou un préfixe est autorisé
+    return allowedPaths.some(p => path === p || (p !== '/' && path.startsWith(p)));
   };
 
   const getDefaultRoute = () => {
     if (!user) return '/login';
-    
     switch (user.role) {
       case 'admin':
       case 'directeur':
+        return '/executive-dashboard';
       case 'chef_de_site':
         return '/equipment-management';
       case 'comptable':
-        return '/accounting';
       case 'equipement':
-        return '/equipment-management';
+        return '/accounting';
       case 'supervisor':
       case 'operator':
         return '/production-management';
@@ -148,11 +129,11 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      loading, 
-      login, 
-      logout, 
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      logout,
       hasAccess,
       getDefaultRoute,
       isAuthenticated: !!user
@@ -164,9 +145,7 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth doit être utilisé dans un AuthProvider');
   return context;
 }
 

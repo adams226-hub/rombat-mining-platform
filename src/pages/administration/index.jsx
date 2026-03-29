@@ -4,9 +4,11 @@ import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
 import { miningService } from "../../config/supabase.js";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Administration() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [userStats, setUserStats] = useState({
     total_users: 0,
@@ -24,12 +26,14 @@ export default function Administration() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   
   // États des formulaires
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
+    password: '',
     full_name: '',
     role: 'operator',
     department: ''
@@ -100,28 +104,35 @@ export default function Administration() {
         return;
       }
 
-      const result = await miningService.createUser('admin', {
-        username: newUser.username,
-        email: newUser.email,
-        password_hash: 'temp_password_123', // Mot de passe temporaire
-        full_name: newUser.full_name,
-        role: newUser.role,
-        department: newUser.department,
-        is_active: true
-      });
+      if (!newUser.password || newUser.password.length < 6) {
+        alert('Le mot de passe doit contenir au moins 6 caractères');
+        return;
+      }
+
+      const result = await miningService.createUser(
+        newUser.email,
+        newUser.password,
+        {
+          username: newUser.username,
+          full_name: newUser.full_name,
+          role: newUser.role,
+          department: newUser.department
+        }
+      );
 
       if (result.error) throw result.error;
 
-      await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
+      await Promise.all([loadUsers(), loadStats()]);
       setShowAddModal(false);
       setNewUser({
         username: '',
         email: '',
+        password: '',
         full_name: '',
         role: 'operator',
         department: ''
       });
-      alert('Utilisateur ajouté avec succès! Mot de passe temporaire: temp_password_123');
+      alert('Utilisateur créé avec succès! Un email de confirmation a été envoyé.');
     } catch (error) {
       console.error('Erreur lors de l\'ajout de l\'utilisateur:', error);
       alert('Erreur lors de l\'ajout de l\'utilisateur: ' + (error.message || 'Erreur inconnue'));
@@ -150,9 +161,8 @@ export default function Administration() {
         return;
       }
 
-      const result = await miningService.updateUser('admin', editUser.id, {
+      const result = await miningService.updateUser(editUser.id, {
         username: editUser.username,
-        email: editUser.email,
         full_name: editUser.full_name,
         role: editUser.role,
         department: editUser.department
@@ -177,7 +187,7 @@ export default function Administration() {
       const user = users.find(u => u.id === userId);
       if (!user) return;
 
-      const result = await miningService.updateUser('admin', userId, {
+      const result = await miningService.updateUser(userId, {
         is_active: !user.is_active
       });
 
@@ -192,16 +202,13 @@ export default function Administration() {
 
 
   // Supprimer un utilisateur
-  const handleDeleteUser = async (userId) => {
+  const handleDeleteUser = async () => {
+    if (!confirmDeleteId) return;
     try {
-      if (window.confirm("Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.")) {
-        const result = await miningService.deleteUser('admin', userId);
-
-        if (result.error) throw result.error;
-
-        await Promise.all([loadUsers(), loadStats()]); // Recharger liste et stats
-        alert('Utilisateur supprimé avec succès!');
-      }
+      const result = await miningService.deleteUser(confirmDeleteId);
+      if (result.error) throw result.error;
+      setConfirmDeleteId(null);
+      await Promise.all([loadUsers(), loadStats()]);
     } catch (error) {
       console.error("Erreur suppression utilisateur:", error);
       alert('Erreur lors de la suppression: ' + (error.message || 'Erreur inconnue'));
@@ -240,7 +247,7 @@ export default function Administration() {
   };
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite="Amp Mines et Carrieres Exploration & Mines">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -450,8 +457,8 @@ export default function Administration() {
                                 color={user.is_active ? "var(--color-warning)" : "var(--color-success)"} 
                               />
                             </button>
-                            <button 
-                              onClick={() => handleDeleteUser(user.id)}
+                            <button
+                              onClick={() => setConfirmDeleteId(user.id)}
                               className="p-1.5 rounded hover:bg-gray-100 transition-colors"
                               title="Supprimer"
                             >
@@ -653,6 +660,19 @@ export default function Administration() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
+                  Mot de passe * (min. 6 caractères)
+                </label>
+                <input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                  className="w-full p-2 rounded border"
+                  style={{ borderColor: "var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+                  placeholder="Mot de passe initial"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: "var(--color-foreground)" }}>
                   Nom Complet *
                 </label>
                 <input
@@ -790,6 +810,28 @@ export default function Administration() {
               <Button variant="default" onClick={handleSaveEdit}>
                 Enregistrer
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirmation suppression */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="rounded-xl p-6 w-full max-w-sm shadow-xl" style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}>
+            <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--color-foreground)" }}>Supprimer l'utilisateur</h3>
+            <p className="text-sm mb-6" style={{ color: "var(--color-muted-foreground)" }}>
+              Cette action est irréversible. L'utilisateur sera définitivement supprimé.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Annuler</Button>
+              <button
+                onClick={handleDeleteUser}
+                className="px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: "var(--color-error)", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                Supprimer
+              </button>
             </div>
           </div>
         </div>

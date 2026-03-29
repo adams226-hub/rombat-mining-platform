@@ -216,7 +216,7 @@ export default function AdminComplete() {
   };
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole="admin" userName="JD" userSite="Amp Mines et Carrieres Exploration & Mines">
       <div className="min-h-screen bg-gray-50 p-4">
         {/* Header */}
         <div className="mb-6">

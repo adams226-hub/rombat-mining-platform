@@ -132,5 +132,5 @@ export const calculateStock = (productionData, exitData) => {
     stock.available = Math.max(0, stock.entries - stock.exits);
   });
   
-  return DIMENSIONS_LIST.map(dim => stockByDimension[dim]);
+  return DIMENSIONS_LIST.map(dim => ({ dimension: dim, ...stockByDimension[dim] }));
 };

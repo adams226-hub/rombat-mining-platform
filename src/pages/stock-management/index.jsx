@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import AppLayout from "components/navigation/AppLayout";
 import Icon from "components/AppIcon";
 import Button from "components/ui/Button";
@@ -8,6 +9,7 @@ import { miningService } from "../../config/supabase.js";
 
 export default function StockManagement() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [stockData, setStockData] = useState([]);
   const [entries, setEntries] = useState([]);
   const [exits, setExits] = useState([]);
@@ -62,9 +64,9 @@ export default function StockManagement() {
     try {
       // Récupérer les données depuis l'API
       const [entriesResult, exitsResult, stockSummaryResult] = await Promise.all([
-        miningService.getStockEntries('admin'),
-        miningService.getStockExits('admin'),
-        miningService.getStockSummary('admin')
+        miningService.getStockEntries(),
+        miningService.getStockExits(),
+        miningService.getStockSummary()
       ]);
 
       if (entriesResult.error) throw entriesResult.error;
@@ -148,7 +150,7 @@ export default function StockManagement() {
       };
 
       // Sauvegarder via l'API
-      const result = await miningService.addStockEntry('admin', entryData);
+      const result = await miningService.addStockEntry(entryData);
       if (result.error) throw result.error;
 
       // Recharger les données
@@ -216,7 +218,7 @@ export default function StockManagement() {
       };
 
       // Sauvegarder via l'API
-      const result = await miningService.addStockExit('admin', exitData);
+      const result = await miningService.addStockExit(exitData);
       if (result.error) throw result.error;
 
       // Recharger les données
@@ -255,7 +257,7 @@ export default function StockManagement() {
 
   if (loading) {
     return (
-      <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+      <AppLayout userRole={user?.role} userName={user?.full_name} userSite={user?.department || 'Amp Mines et Carrieres'}>
         <div className="flex items-center justify-center h-64">
           <p style={{ color: "var(--color-muted-foreground)" }}>Chargement...</p>
         </div>
@@ -264,7 +266,7 @@ export default function StockManagement() {
   }
 
   return (
-    <AppLayout userRole="admin" userName="JD" userSite="RomBat Exploration & Mines">
+    <AppLayout userRole={user?.role} userName={user?.full_name} userSite={user?.department || 'Amp Mines et Carrieres'}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
@@ -458,30 +460,38 @@ export default function StockManagement() {
                   Quantités par dimension (tonnes)
                 </label>
                 <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
-                  {newEntry.dimensions.map((dim, index) => (
-                    <div key={index}>
-                      <label className="block text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
-                        {dim.size}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={dim.quantity}
-                        onChange={(e) => {
-                          const updatedDims = [...newEntry.dimensions];
-                          updatedDims[index].quantity = e.target.value;
-                          setNewEntry({...newEntry, dimensions: updatedDims});
-                        }}
-                        className="w-full p-2 rounded border"
-                        style={{ 
-                          borderColor: "var(--color-border)",
-                          background: "var(--color-background)",
-                          color: "var(--color-foreground)"
-                        }}
-                        placeholder="0.0"
-                      />
-                    </div>
-                  ))}
+                  {newEntry.dimensions.map((dim, index) => {
+                    const stockDim = stockData.find(s => s.dimension === dim.size);
+                    const available = stockDim ? stockDim.available : 0;
+                    return (
+                      <div key={index}>
+                        <label className="block text-xs mb-0.5 font-medium" style={{ color: "var(--color-foreground)" }}>
+                          {dim.size}
+                        </label>
+                        <p className="text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
+                          Stock: <span style={{ fontWeight: 600, color: available > 0 ? "var(--color-success)" : "var(--color-muted-foreground)" }}>{available.toFixed(1)} t</span>
+                        </p>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={dim.quantity}
+                          onChange={(e) => {
+                            const updatedDims = [...newEntry.dimensions];
+                            updatedDims[index].quantity = e.target.value;
+                            setNewEntry({...newEntry, dimensions: updatedDims});
+                          }}
+                          className="w-full p-2 rounded border"
+                          style={{
+                            borderColor: "var(--color-border)",
+                            background: "var(--color-background)",
+                            color: "var(--color-foreground)"
+                          }}
+                          placeholder="0.0"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -554,15 +564,20 @@ export default function StockManagement() {
                 <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
                   {newExit.dimensions.map((dim, index) => {
                     const stockDim = stockData.find(s => s.dimension === dim.size);
+                    const available = stockDim ? stockDim.available : 0;
+                    const requested = parseFloat(dim.quantity) || 0;
+                    const isOverstock = requested > available;
                     return (
                       <div key={index}>
-                        <label className="block text-xs mb-1" style={{ color: "var(--color-muted-foreground)" }}>
-                          {dim.size} (Disponible: {stockDim?.available.toFixed(1) || 0} t)
+                        <label className="block text-xs mb-1" style={{ color: isOverstock ? "var(--color-error)" : "var(--color-muted-foreground)", fontWeight: isOverstock ? 600 : 400 }}>
+                          {dim.size} — Disponible: <span style={{ fontWeight: 700 }}>{available.toFixed(1)} t</span>
+                          {isOverstock && <span style={{ color: "var(--color-error)" }}> ⚠ Dépassement</span>}
                         </label>
                         <input
                           type="number"
                           step="0.1"
-                          max={stockDim?.available || 0}
+                          min="0"
+                          max={available}
                           value={dim.quantity}
                           onChange={(e) => {
                             const updatedDims = [...newExit.dimensions];
@@ -570,9 +585,9 @@ export default function StockManagement() {
                             setNewExit({...newExit, dimensions: updatedDims});
                           }}
                           className="w-full p-2 rounded border"
-                          style={{ 
-                            borderColor: "var(--color-border)",
-                            background: "var(--color-background)",
+                          style={{
+                            borderColor: isOverstock ? "var(--color-error)" : "var(--color-border)",
+                            background: isOverstock ? "rgba(229,62,62,0.06)" : "var(--color-background)",
                             color: "var(--color-foreground)"
                           }}
                           placeholder="0.0"
@@ -593,6 +608,11 @@ export default function StockManagement() {
               <Button
                 variant="default"
                 onClick={handleAddExit}
+                disabled={newExit.dimensions.some(dim => {
+                  const stockDim = stockData.find(s => s.dimension === dim.size);
+                  const available = stockDim ? stockDim.available : 0;
+                  return (parseFloat(dim.quantity) || 0) > available;
+                })}
               >
                 Enregistrer la Sortie
               </Button>

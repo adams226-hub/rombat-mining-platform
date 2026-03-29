@@ -25,7 +25,7 @@ const NAV_ITEMS = [
     icon: 'Wrench',
     path: '/equipment-management',
     roles: ['admin', 'directeur', 'chef_de_site', 'equipement'],
-    badge: { count: 3, type: 'warning' },
+    badge: null,
   },
   {
     id: 'fuel',
@@ -33,7 +33,15 @@ const NAV_ITEMS = [
     icon: 'Fuel',
     path: '/fuel-management',
     roles: ['admin', 'directeur'],
-    badge: { count: 1, type: 'critical' },
+    badge: null,
+  },
+  {
+    id: 'data-explorer',
+    label: 'Données',
+    icon: 'Database',
+    path: '/data-explorer',
+    roles: ['admin', 'directeur', 'comptable', 'equipement', 'supervisor'],
+    badge: null,
   },
   {
     id: 'accounting',
@@ -188,7 +196,7 @@ export default function Sidebar({ isCollapsed = false, isOpen = false, onToggleC
                 className="text-white font-heading font-700 text-sm leading-tight truncate"
                 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700 }}
               >
-                RomBat
+                Amp Mines et Carrieres
               </span>
               <span
                 className="text-white/70 text-xs leading-tight truncate"
