@@ -604,6 +604,8 @@ export const miningService = {
       financialMonthResult,
       financialSixMonthResult,
       sitesResult,
+      voyagesResult,
+      trousResult,
     ] = await Promise.all([
       supabase.from('production').select('total, date').gte('date', startOfMonth),
       supabase.from('production').select('total, date').gte('date', weekStartStr).lte('date', today),
@@ -613,6 +615,16 @@ export const miningService = {
       supabase.from('financial_transactions').select('amount, type').gte('transaction_date', startOfMonth),
       supabase.from('financial_transactions').select('amount, type, transaction_date').gte('transaction_date', sixMonthsAgoStr),
       supabase.from('sites').select('id, name, location, is_active').order('name'),
+      // Nombre de voyages minerai du jour
+      supabase.from('production_details')
+        .select('quantity, production!inner(date)')
+        .eq('dimension', 'Minerai')
+        .eq('production.date', today),
+      // Nombre de trous forés du jour
+      supabase.from('production_details')
+        .select('quantity, production!inner(date)')
+        .eq('dimension', 'Forage')
+        .eq('production.date', today),
     ]);
 
     const productionsMonth = productionMonthResult.data || [];
@@ -623,6 +635,8 @@ export const miningService = {
     const financialMonth = financialMonthResult.data || [];
     const financialSixMonth = financialSixMonthResult.data || [];
     const sites = sitesResult.data || [];
+    const voyagesMineraiToday = (voyagesResult.data || []).reduce((s, r) => s + Math.round(parseFloat(r.quantity || 0)), 0);
+    const trousForesToday = (trousResult.data || []).reduce((s, r) => s + Math.round(parseFloat(r.quantity || 0)), 0);
 
     // ── KPI aggregates ────────────────────────────────────────
     const totalProductionMonth = productionsMonth.reduce((s, p) => s + parseFloat(p.total || 0), 0);
@@ -714,6 +728,9 @@ export const miningService = {
         monthly_profit_data: monthlyProfitData,
         production_week_data: productionWeekData,
         production_month_data: productionMonthData,
+        // Compteurs spéciaux
+        voyages_minerai_today: voyagesMineraiToday,
+        trous_fores_today: trousForesToday,
         // Tables
         sites: sitesData,
       },
