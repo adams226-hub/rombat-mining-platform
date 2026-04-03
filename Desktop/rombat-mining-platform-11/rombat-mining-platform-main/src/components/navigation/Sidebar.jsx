@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
+import AmpLogo from './AmpLogo';
 
 const NAV_ITEMS = [
   {
@@ -144,66 +145,14 @@ export default function Sidebar({ isCollapsed = false, isOpen = false, onToggleC
         role="navigation"
       >
         {/* Logo / Brand */}
-        <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <div 
-              style={{ 
-                width: '52px', 
-                height: '52px', 
-                borderRadius: '14px',
-                background: 'linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFC947 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 'bold',
-                color: 'white',
-                fontSize: '20px',
-                fontFamily: 'var(--font-heading)',
-                boxShadow: '0 6px 16px rgba(255, 107, 53, 0.4)',
-                border: '3px solid rgba(255, 255, 255, 0.15)',
-                position: 'relative',
-                overflow: 'hidden',
-                transform: 'scale(1.1)'
-              }}
-            >
-              <div style={{
-                position: 'absolute',
-                top: '3px',
-                left: '3px',
-                right: '3px',
-                bottom: '3px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.08) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <span style={{
-                  fontSize: '22px',
-                  fontWeight: '900',
-                  textShadow: '0 3px 6px rgba(0, 0, 0, 0.3)',
-                  letterSpacing: '2px',
-                  lineHeight: '1'
-                }}>
-                  RB
-                </span>
-              </div>
+        <div className="sidebar-header" style={{ padding: '12px 14px', overflow: 'hidden' }}>
+          {isCollapsed ? (
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+              <AmpLogo collapsed={true} />
             </div>
-          </div>
-          {!isCollapsed && (
-            <div className="sidebar-brand-text flex flex-col min-w-0">
-              <span
-                className="text-white font-heading font-700 text-sm leading-tight truncate"
-                style={{ fontFamily: 'var(--font-heading)', fontWeight: 700 }}
-              >
-                Amp Mines et Carrieres
-              </span>
-              <span
-                className="text-white/70 text-xs leading-tight truncate"
-                style={{ fontFamily: 'var(--font-caption)' }}
-              >
-                Exploration & Mines
-              </span>
+          ) : (
+            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+              <AmpLogo collapsed={false} />
             </div>
           )}
 
